@@ -1,0 +1,23 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "bip375-interop"
+version = "0.1.0"
+description = "Reproducible BIP-375 and collaborative Silent Payments interoperability harness"
+requires-python = ">=3.11"
+dependencies = ["PyYAML>=6.0"]
+
+[project.optional-dependencies]
+test = ["pytest>=8.0"]
+
+[project.scripts]
+bip375-interop = "bip375_interop.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/bip375_interop"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

@@ -1,0 +1,21 @@
+artifact_root: ../artifacts
+allow_dirty: false
+checkouts:
+  silent-pay:
+    path: /Users/macgyver/src/silent-pay
+    revision: null
+  bip375-test-generator:
+    path: /Users/macgyver/src/bip375-test-generator
+    revision: null
+  coldcard:
+    path: /Users/macgyver/src/coldcard-firmware
+    revision: null
+  jade:
+    path: /Users/macgyver/src/Jade
+    revision: null
+  seedsigner:
+    path: /Users/macgyver/src/seedsigner
+    revision: null
+  bitsaga-seedsigner:
+    path: /Users/macgyver/src/bitsaga-seedsigner
+    revision: null
