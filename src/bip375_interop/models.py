@@ -1,0 +1,64 @@
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Mapping
+
+from .errors import ConfigurationError
+
+
+@dataclass(frozen=True)
+class Checkout:
+    name: str
+    path: Path
+    revision: str | None = None
+
+
+@dataclass(frozen=True)
+class HarnessConfig:
+    artifact_root: Path
+    checkouts: Mapping[str, Checkout]
+    allow_dirty: bool = False
+
+
+@dataclass(frozen=True)
+class SignerSpec:
+    name: str
+    backend: str
+    seed_id: str
+
+    @classmethod
+    def from_dict(cls, value: Mapping[str, Any]) -> "SignerSpec":
+        missing = {"name", "backend", "seed_id"} - value.keys()
+        if missing:
+            raise ConfigurationError(f"signer missing fields: {', '.join(sorted(missing))}")
+        return cls(*(str(value[k]) for k in ("name", "backend", "seed_id")))
+
+
+@dataclass(frozen=True)
+class Scenario:
+    name: str
+    suite: str
+    network: str
+    signers: tuple[SignerSpec, ...]
+    suite_config: Mapping[str, Any] = field(default_factory=dict)
+    inputs: tuple[Mapping[str, Any], ...] = ()
+    outputs: tuple[Mapping[str, Any], ...] = ()
+
+    @classmethod
+    def from_dict(cls, value: Mapping[str, Any]) -> "Scenario":
+        missing = {"name", "suite", "network", "signers"} - value.keys()
+        if missing:
+            raise ConfigurationError(f"scenario missing fields: {', '.join(sorted(missing))}")
+        signers = tuple(SignerSpec.from_dict(item) for item in value["signers"])
+        if not signers:
+            raise ConfigurationError("scenario requires at least one signer")
+        names = [signer.name for signer in signers]
+        if len(names) != len(set(names)):
+            raise ConfigurationError("signer names must be unique")
+        return cls(
+            name=str(value["name"]), suite=str(value["suite"]),
+            network=str(value["network"]), signers=signers,
+            suite_config=dict(value.get("suite_config", {})),
+            inputs=tuple(value.get("inputs", ())), outputs=tuple(value.get("outputs", ())),
+        )
