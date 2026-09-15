@@ -1,0 +1,11 @@
+name: bip375-seedsigner-single
+suite: bip375
+network: regtest
+signers:
+  - {name: seedsigner-a, backend: seedsigner, seed_id: test-a}
+suite_config:
+  contribution_mode: global
+inputs:
+  - {owner: seedsigner-a, type: p2wpkh, amount_sat: 100000}
+outputs:
+  - {type: silent-payment, recipient_id: recipient-a, amount_sat: 99000}

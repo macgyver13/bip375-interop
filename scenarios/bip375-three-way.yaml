@@ -1,0 +1,16 @@
+name: bip375-three-way
+suite: bip375
+network: regtest
+signers:
+  - {name: coldcard-a, backend: coldcard, seed_id: test-a}
+  - {name: jade-b, backend: jade, seed_id: test-b}
+  - {name: seedsigner-c, backend: seedsigner, seed_id: test-c}
+suite_config:
+  contribution_mode: per-input
+inputs:
+  - {owner: coldcard-a, type: p2wpkh, amount_sat: 100000}
+  - {owner: jade-b, type: p2tr, amount_sat: 110000}
+  - {owner: seedsigner-c, type: p2wpkh, amount_sat: 120000}
+outputs:
+  - {type: silent-payment, recipient_id: recipient-a, amount_sat: 300000}
+  - {type: change, owner: coldcard-a, amount_sat: 29000}

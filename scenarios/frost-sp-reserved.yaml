@@ -1,0 +1,8 @@
+name: frost-sp-reserved
+suite: frost-sp
+network: regtest
+signers:
+  - name: signer-a
+    backend: unsupported
+    seed_id: test-a
+suite_config: {}
