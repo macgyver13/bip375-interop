@@ -1,0 +1,9 @@
+name: musig2-sp-coldcard-jade-two-way
+suite: musig2-sp
+network: regtest
+signers:
+  - {name: coldcard-a, backend: coldcard, seed_id: test-a}
+  - {name: jade-b, backend: jade, seed_id: test-b}
+suite_config:
+  key_architecture: aggregate-then-derive
+  threshold: 2

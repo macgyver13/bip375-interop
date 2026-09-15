@@ -40,6 +40,7 @@ class ColdcardPsbtWorker:
         self._device: Any | None = None
         self._mnemonic: str | None = None
         self._seed_script: Path | None = None
+        self._enrolled_descriptor: str | None = None
         self._load_error: str | None = None
         if self._device_factory is None:
             try:
@@ -51,7 +52,7 @@ class ColdcardPsbtWorker:
         return RuntimeCapabilities(
             backend=self.backend,
             plain_bip375=self._device_factory is not None,
-            musig2_sp=False,
+            musig2_sp=self._device_factory is not None,
             persistent=True,
             unavailable_reason=self._load_error,
         )
@@ -61,7 +62,8 @@ class ColdcardPsbtWorker:
             raise WorkerRequestError(
                 "unsupported", self._load_error or "Coldcard runtime is unavailable"
             )
-        if _required_string(request, "suite") != "bip375":
+        suite = _required_string(request, "suite")
+        if suite not in {"bip375", "musig2-sp"}:
             raise WorkerRequestError("unsupported", "Coldcard worker supports BIP-375 only")
         network = request.get("network", "regtest")
         if network not in {"regtest", "testnet"}:
@@ -71,6 +73,9 @@ class ColdcardPsbtWorker:
         mnemonic = _required_string(request, "mnemonic")
         psbt = _decode_psbt(request)
         device = self._open(mnemonic)
+        if suite == "musig2-sp":
+            descriptor = _required_string(request, "descriptor")
+            self._enroll_descriptor(device, descriptor)
         try:
             length, digest = device.upload_file(psbt)
             packer = self._protocol_packer()
@@ -110,6 +115,19 @@ class ColdcardPsbtWorker:
                 "invalid_signer", "a persistent Coldcard worker cannot change mnemonic"
             )
         return self._device
+
+    def _enroll_descriptor(self, device: Any, descriptor: str) -> None:
+        if self._enrolled_descriptor == descriptor:
+            return
+        try:
+            config = json.dumps({"name": "bip375-interop", "desc": descriptor}).encode("ascii")
+            file_len, sha = device.upload_file(config)
+            packer = self._protocol_packer()
+            device.send_recv(packer.miniscript_enroll(file_len, sha))
+            device.send_recv(packer.sim_keypress(b"y"), timeout=None)
+        except Exception as exc:
+            raise WorkerRequestError("coldcard_setup_failed", str(exc)) from exc
+        self._enrolled_descriptor = descriptor
 
     def _start_simulator(self) -> Any:
         checkout = self._environ.get("BIP375_COLDCARD_CHECKOUT")

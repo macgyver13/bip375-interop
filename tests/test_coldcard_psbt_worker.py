@@ -23,6 +23,10 @@ class FakePacker:
     def version() -> tuple:
         return ("version",)
 
+    @staticmethod
+    def miniscript_enroll(length: int, digest: bytes) -> tuple:
+        return ("enroll", length, digest)
+
 
 class FakeDevice:
     def __init__(self) -> None:
@@ -74,6 +78,23 @@ def test_coldcard_worker_reuses_one_seeded_device() -> None:
     assert sum(call[1] == ("key", b"x") for call in device.calls if call[0] == "send") == 2
     assert base64.b64decode(first["psbt"]) == b"psbt\xffcoldcard-signed"
     assert base64.b64decode(second["psbt"]) == b"psbt\xffcoldcard-signed"
+
+
+def test_coldcard_worker_enrolls_descriptor_once_for_musig2_sp() -> None:
+    device = FakeDevice()
+    worker = ColdcardPsbtWorker(device_factory=lambda **_kwargs: device, packer=FakePacker)
+    worker._device = device
+    worker._seed_script = Path("/tmp/set_seed.py")
+    request = _request()
+    request["suite"] = "musig2-sp"
+    request["descriptor"] = "tr(musig(...)/<0;1>/*)"
+
+    worker.process(request)
+    worker.process(request)
+
+    enroll_uploads = [call for call in device.calls if call[0] == "upload" and b"bip375-interop" in call[1]]
+    assert len(enroll_uploads) == 1
+    assert sum(call[1][0] == "enroll" for call in device.calls if call[0] == "send") == 1
 
 
 def test_coldcard_worker_rejects_a_second_signer_seed() -> None:

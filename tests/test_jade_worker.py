@@ -26,6 +26,7 @@ class FakeJade:
         self.disconnected = False
         self.mnemonic: tuple[str, bool] | None = None
         self.calls: list[tuple[str, bytes]] = []
+        self.registered_descriptors: list[tuple[str, str, str, dict]] = []
 
     def connect(self) -> None:
         self.connected = True
@@ -42,6 +43,12 @@ class FakeJade:
     def sign_psbt(self, network: str, psbt: bytes) -> bytes:
         self.calls.append((network, psbt))
         return psbt + b"-jade"
+
+    def register_descriptor(
+        self, network: str, descriptor_name: str, descriptor_script: str, datavalues: dict
+    ) -> bool:
+        self.registered_descriptors.append((network, descriptor_name, descriptor_script, datavalues))
+        return True
 
 
 def test_jade_worker_keeps_one_seeded_connection_and_maps_regtest() -> None:
@@ -70,6 +77,32 @@ def test_jade_worker_keeps_one_seeded_connection_and_maps_regtest() -> None:
     assert base64.b64decode(second["psbt"]) == b"psbt\xfffixture-jade"
     worker.close()
     assert jade.disconnected
+
+
+def test_jade_worker_registers_descriptor_once_for_musig2_sp() -> None:
+    jade = FakeJade()
+    worker = JadeWorker(
+        environ={"BIP375_JADE_ENDPOINT": "tcp:127.0.0.1:30121"},
+        api_factory=lambda **_kwargs: jade,
+    )
+    request = {
+        "suite": "musig2-sp",
+        "mnemonic": "published test mnemonic",
+        "network": "regtest",
+        "descriptor": "tr(musig(...)/<0;1>/*)",
+        "psbt": base64.b64encode(b"psbt\xfffixture").decode(),
+    }
+
+    worker.process(request)
+    worker.process(request)
+
+    assert jade.registered_descriptors == [
+        ("localtest", "bip375-interop", "tr(musig(...)/<0;1>/*)", {}),
+    ]
+    assert jade.calls == [
+        ("localtest", b"psbt\xfffixture"),
+        ("localtest", b"psbt\xfffixture"),
+    ]
 
 
 def test_jade_worker_rejects_a_second_signer_seed() -> None:
