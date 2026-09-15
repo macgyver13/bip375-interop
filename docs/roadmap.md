@@ -17,8 +17,9 @@
 - [x] Permit only BIP-375-authorized output-script resolution and modifiable-flag clearing.
 - [x] Run an unresolved PSBT through the actual upstream SeedSigner BIP-375 runtime.
 - [x] Overlay external Coldcard fixtures in a disposable checkout copy.
-- [ ] Add arbitrary-PSBT transports for Coldcard and Jade.
-  Jade has a persistent QEMU worker with dynamic host-port allocation; Coldcard remains pending.
+- [x] Add arbitrary-PSBT transports for Coldcard and Jade.
+  Jade has a persistent QEMU worker with dynamic host-port allocation. Coldcard has a
+  persistent headless segregated simulator worker and a reproducible one-owner external-fixture smoke lane.
 - Exercise same-backend, pairwise mixed, and Coldcard/Jade/SeedSigner three-way runs.
 - Reject conflicts, transaction-intent mutation, premature signatures, invalid proofs,
   and incomplete ECDH coverage.

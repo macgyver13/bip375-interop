@@ -188,6 +188,21 @@ def test_merge_allows_bip375_output_resolution_and_flag_clearing() -> None:
     assert merged.outputs[0].get(b"\x04") is not None
 
 
+def test_merge_treats_omitted_tx_modifiable_as_zero_during_bip375_resolution() -> None:
+    base = fixture(
+        unresolved_sp=True,
+        globals_extra=[(b"\x06", b"\x03")],
+    )
+    contribution = fixture(
+        unresolved_sp=True,
+        output_extra=[(b"\x04", bytes.fromhex("225120") + b"\x44" * 32)],
+    )
+
+    merged = parse_psbt(merge_psbts(base, contribution))
+    assert merged.globals.get(b"\x06") is None
+    assert merged.outputs[0].get(b"\x04") is not None
+
+
 def test_merge_rejects_enabling_modifiable_flags() -> None:
     base = fixture(globals_extra=[(b"\x06", b"\x00")])
     contribution = fixture(globals_extra=[(b"\x06", b"\x01")])

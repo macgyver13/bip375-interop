@@ -141,6 +141,10 @@ def merge_parsed_psbts(base: PsbtV2, contribution: PsbtV2) -> PsbtV2:
 
     _require_same_transaction(base, contribution)
     globals_map = _merge_map(base.globals, contribution.globals, "global", None)
+    if _resolves_silent_payment_output(base, contribution):
+        globals_map = _clear_tx_modifiable_if_omitted(
+            base.globals, contribution.globals, globals_map
+        )
     inputs = tuple(
         _merge_map(left, right, "input", index)
         for index, (left, right) in enumerate(zip(base.inputs, contribution.inputs))
@@ -150,6 +154,25 @@ def merge_parsed_psbts(base: PsbtV2, contribution: PsbtV2) -> PsbtV2:
         for index, (left, right) in enumerate(zip(base.outputs, contribution.outputs))
     )
     return PsbtV2(globals_map, inputs, outputs)
+
+
+def _resolves_silent_payment_output(base: PsbtV2, contribution: PsbtV2) -> bool:
+    return any(
+        left.get(b"\x09") is not None
+        and left.get(b"\x04") is None
+        and right.get(b"\x04") is not None
+        for left, right in zip(base.outputs, contribution.outputs)
+    )
+
+
+def _clear_tx_modifiable_if_omitted(
+    base: PsbtMap, contribution: PsbtMap, merged: PsbtMap
+) -> PsbtMap:
+    """Treat an omitted optional zero flag as a BIP-375 resolution clear."""
+
+    if base.get(b"\x06") is None or contribution.get(b"\x06") is not None:
+        return merged
+    return PsbtMap(tuple(entry for entry in merged.entries if entry.key != b"\x06"))
 
 
 def semantic_diff(before: bytes | PsbtV2, after: bytes | PsbtV2) -> DiffSummary:

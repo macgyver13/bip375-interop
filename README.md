@@ -55,11 +55,10 @@ Coldcard still needs its per-PSBT transport before it can join an arbitrary mixe
 run. Jade's persistent QEMU transport is available for the single-device lane;
 the next fixture-generator milestone makes it usable in a mixed run.
 
-Jade now also has a single-command QEMU smoke lane. It builds the documented
-``--dev --ci --psram`` image when needed, starts an isolated container on an
-ephemeral port, runs Jade's own BIP-375 resolve-and-sign fixture through the
-JSON-lines worker, strictly merges the returned PSBT, and tears the container
-down:
+Jade now also has a single-command native QEMU smoke lane. It uses existing
+QEMU build artifacts, starts an isolated process on an ephemeral loopback
+port, runs Jade's own BIP-375 resolve-and-sign fixture through the JSON-lines
+worker, strictly merges the returned PSBT, and stops the process:
 
 ```sh
 bip375-interop --allow-dirty smoke jade
@@ -84,7 +83,7 @@ bip375-interop --allow-dirty run-generated \
 test seed, builds an unresolved PSBTv2 with SIGHASH_ALL, starts Jade QEMU on
 an ephemeral host port, and retains the same Jade connection across the three
 BIP-375 phases. The run is not considered proven until it completes against a
-live Docker daemon.
+live Jade QEMU instance.
 
 Coldcard's native adapter runs its upstream simulator suites in a disposable
 checkout copy. The BIP-375 lane covers `test_bip375_vectors.py`,
