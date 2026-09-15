@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from bip375_interop.adapters import BitSagaAdapter, JadeAdapter, SeedSignerAdapter
+from bip375_interop.adapters import BitSagaAdapter, ColdcardAdapter, JadeAdapter, SeedSignerAdapter
 from bip375_interop.suites import KeyArchitecture, SuiteName
 
 
@@ -25,7 +25,8 @@ def _touch(root: Path, relative: str) -> None:
 
 
 def _jade_checkout(root: Path) -> Path:
-    _touch(root, "Dockerfile.qemu")
+    _touch(root, "build/flash_image.bin")
+    _touch(root, "build/qemu_efuse.bin")
     _touch(root, "test_jade.py")
     (root / "jadepy").mkdir()
     return root
@@ -38,6 +39,19 @@ def _seedsigner_checkout(root: Path, *, musig2: bool) -> Path:
     if musig2:
         _touch(root, "tests/test_musig2_sp.py")
         _touch(root, "tests/test_flows_musig2.py")
+    return root
+
+
+def _coldcard_checkout(root: Path) -> Path:
+    _touch(root, "unix/Makefile")
+    _touch(root, "testing/run_sim_tests.py")
+    _touch(root, "testing/test_silentpayments.py")
+    _touch(root, "testing/test_musig2_silentpayments.py")
+    _touch(root, "testing/test_bip375_vectors.py")
+    _touch(root, "testing/test_bip352_vectors.py")
+    _touch(root, "testing/test_musig2_sp_signers.py")
+    _touch(root, "ENV/bin/python")
+    (root / "external" / "ckcc-protocol").mkdir(parents=True)
     return root
 
 
@@ -64,29 +78,15 @@ def test_capabilities_distinguish_plain_bip375_from_musig2_sp(tmp_path: Path) ->
     }
 
 
-def test_jade_plans_qemu_build_run_and_tcp_test(tmp_path: Path) -> None:
+def test_jade_plans_native_qemu_worker_and_tcp_test(tmp_path: Path) -> None:
     adapter = JadeAdapter(
         _jade_checkout(tmp_path / "jade"),
         python_executable="python-test",
-        docker_executable="docker-test",
-        image="jade-test-image",
     )
 
-    (build,) = adapter.plan_build()
-    emulator = adapter.plan_emulator()
     test = adapter.plan_test(tmp_path / "artifacts")
     worker = adapter.plan_worker()
 
-    assert build.argv[:4] == ("docker-test", "build", "-t", "jade-test-image")
-    assert "QEMU_CONFIG_ARGS=--dev --ci --psram" in build.argv
-    assert emulator.argv == (
-        "docker-test",
-        "run",
-        "--rm",
-        "-p",
-        "30121:30121",
-        "jade-test-image",
-    )
     assert test.argv == (
         "python-test",
         "test_jade.py",
@@ -100,6 +100,22 @@ def test_jade_plans_qemu_build_run_and_tcp_test(tmp_path: Path) -> None:
         "bip375_interop.jade_worker",
     )
     assert worker.env["BIP375_JADE_CHECKOUT"] == str(adapter.firmware_dir)
+    assert "BIP375_JADE_DOCKER" not in worker.env
+
+
+def test_coldcard_plans_persistent_native_simulator_worker(tmp_path: Path) -> None:
+    adapter = ColdcardAdapter(_coldcard_checkout(tmp_path / "coldcard"))
+
+    worker = adapter.plan_worker()
+
+    assert worker.argv == (
+        str(adapter.firmware_dir / "ENV" / "bin" / "python"),
+        "-u",
+        "-m",
+        "bip375_interop.coldcard_psbt_worker",
+    )
+    assert worker.env["BIP375_COLDCARD_CHECKOUT"] == str(adapter.firmware_dir)
+    assert worker.env["BIP375_COLDCARD_PYTHON"] == str(adapter.firmware_dir / "ENV" / "bin" / "python")
 
 
 def test_seedsigner_plans_only_upstream_plain_bip375_worker(tmp_path: Path) -> None:

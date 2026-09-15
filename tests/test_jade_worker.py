@@ -1,8 +1,23 @@
 from __future__ import annotations
 
 import base64
+from pathlib import Path
 
 from bip375_interop.jade_worker import JadeWorker
+
+
+class FakeQemu:
+    def __init__(self) -> None:
+        self.terminated = False
+
+    def poll(self):
+        return None
+
+    def terminate(self) -> None:
+        self.terminated = True
+
+    def wait(self, timeout: float) -> None:
+        return None
 
 
 class FakeJade:
@@ -76,3 +91,34 @@ def test_jade_worker_rejects_a_second_signer_seed() -> None:
         assert str(exc) == "a persistent Jade worker cannot change mnemonic"
     else:
         raise AssertionError("second mnemonic was accepted")
+
+
+def test_jade_worker_starts_and_stops_native_qemu(tmp_path: Path) -> None:
+    checkout = tmp_path / "jade"
+    (checkout / "build").mkdir(parents=True)
+    (checkout / "build" / "flash_image.bin").touch()
+    (checkout / "build" / "qemu_efuse.bin").touch()
+    qemu = FakeQemu()
+    observed = {}
+
+    def process_factory(argv, **kwargs):
+        observed["argv"] = argv
+        observed["cwd"] = kwargs["cwd"]
+        return qemu
+
+    worker = JadeWorker(
+        environ={
+            "BIP375_JADE_CHECKOUT": str(checkout),
+            "BIP375_JADE_QEMU": "/tools/qemu-system-xtensa",
+        },
+        process_factory=process_factory,
+    )
+
+    endpoint = worker._start_qemu()
+
+    assert endpoint.startswith("tcp:127.0.0.1:")
+    assert observed["argv"][0] == "/tools/qemu-system-xtensa"
+    assert any(argument.startswith("user,model=open_eth") for argument in observed["argv"])
+    assert observed["cwd"] == checkout
+    worker.close()
+    assert qemu.terminated

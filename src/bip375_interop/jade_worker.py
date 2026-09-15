@@ -1,6 +1,6 @@
 """Persistent Jade QEMU worker for externally supplied BIP-375 PSBTs.
 
-The worker owns one QEMU container and one JadeAPI connection.  This is
+The worker owns one native QEMU process and one JadeAPI connection. This is
 important for collaborative Silent Payments and is also the lifecycle needed
 for the later MuSig2 adapter, whose nonce state lives in the emulator.
 """
@@ -12,10 +12,14 @@ import base64
 import importlib
 import json
 import os
+import shutil
+import socket
 import subprocess
 import sys
+import tempfile
 import time
 from collections.abc import Callable, Mapping
+from pathlib import Path
 from typing import Any, TextIO
 
 from .signer_worker import RuntimeCapabilities, WorkerRequestError, _required_string
@@ -25,7 +29,7 @@ _NETWORKS = {"regtest": "localtest"}
 
 
 class JadeWorker:
-    """Sign BIP-375 PSBTs through an isolated Jade QEMU instance."""
+    """Sign BIP-375 PSBTs through an isolated native Jade QEMU instance."""
 
     backend = "jade"
 
@@ -34,13 +38,14 @@ class JadeWorker:
         *,
         environ: Mapping[str, str] | None = None,
         api_factory: Callable[..., Any] | None = None,
-        runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
+        process_factory: Callable[..., subprocess.Popen[bytes]] = subprocess.Popen,
         sleeper: Callable[[float], None] = time.sleep,
     ) -> None:
         self._environ = dict(os.environ if environ is None else environ)
-        self._runner = runner
         self._sleep = sleeper
-        self._container: str | None = None
+        self._process_factory = process_factory
+        self._qemu: subprocess.Popen[bytes] | None = None
+        self._runtime_dir: tempfile.TemporaryDirectory[str] | None = None
         self._jade: Any | None = None
         self._mnemonic: str | None = None
         self._load_error: str | None = None
@@ -91,23 +96,23 @@ class JadeWorker:
             except Exception:
                 pass
             self._jade = None
-        if self._container is not None:
-            try:
-                self._runner(
-                    [self._docker(), "rm", "-f", self._container],
-                    check=False,
-                    capture_output=True,
-                    text=True,
-                )
-            except OSError:
-                pass
-            self._container = None
+        if self._qemu is not None:
+            if self._qemu.poll() is None:
+                self._qemu.terminate()
+                try:
+                    self._qemu.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    self._qemu.kill()
+            self._qemu = None
+        if self._runtime_dir is not None:
+            self._runtime_dir.cleanup()
+            self._runtime_dir = None
 
     def _open(self, mnemonic: str) -> Any:
         if self._jade is None:
             endpoint = self._environ.get("BIP375_JADE_ENDPOINT")
             if not endpoint:
-                endpoint = self._start_container()
+                endpoint = self._start_qemu()
             deadline = time.monotonic() + float(self._environ.get("BIP375_JADE_STARTUP_SECONDS", "90"))
             error: Exception | None = None
             while time.monotonic() < deadline:
@@ -141,52 +146,84 @@ class JadeWorker:
             )
         return self._jade
 
-    def _start_container(self) -> str:
-        image = self._environ.get("BIP375_JADE_IMAGE", "bip375-interop-jade")
-        docker = self._docker()
-        inspected = self._runner(
-            [docker, "image", "inspect", image], check=False, capture_output=True, text=True
-        )
-        if inspected.returncode:
-            checkout = self._environ.get("BIP375_JADE_CHECKOUT")
-            if not checkout:
-                raise WorkerRequestError(
-                    "jade_configuration_missing",
-                    "BIP375_JADE_CHECKOUT is required to build the Jade QEMU image",
-                )
-            built = self._runner(
-                [docker, "build", "-t", image, "-f", "Dockerfile.qemu", ".",
-                 "--build-arg", "QEMU_CONFIG_ARGS=--dev --ci --psram"],
-                cwd=checkout,
-                check=False,
-                capture_output=True,
-                text=True,
+    def _start_qemu(self) -> str:
+        checkout = self._environ.get("BIP375_JADE_CHECKOUT")
+        if not checkout:
+            raise WorkerRequestError(
+                "jade_configuration_missing",
+                "BIP375_JADE_CHECKOUT is required to start Jade QEMU",
             )
-            if built.returncode:
-                raise WorkerRequestError("jade_build_failed", built.stderr.strip())
-        launched = self._runner(
-            [docker, "run", "-d", "--rm", "-p", "127.0.0.1::30121", image],
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-        if launched.returncode:
-            raise WorkerRequestError("jade_start_failed", launched.stderr.strip())
-        self._container = launched.stdout.strip()
-        mapped = self._runner(
-            [docker, "port", self._container, "30121/tcp"],
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-        if mapped.returncode or not mapped.stdout.strip():
-            self.close()
-            raise WorkerRequestError("jade_start_failed", mapped.stderr.strip() or "Jade port was not mapped")
-        host_port = mapped.stdout.strip().rsplit(":", 1)[-1]
-        return f"tcp:127.0.0.1:{host_port}"
+        checkout_path = Path(checkout)
+        flash_image = checkout_path / "build" / "flash_image.bin"
+        efuse_image = checkout_path / "build" / "qemu_efuse.bin"
+        missing = [str(path) for path in (flash_image, efuse_image) if not path.is_file()]
+        if missing:
+            raise WorkerRequestError(
+                "jade_build_missing", f"Jade QEMU build artifacts are missing: {', '.join(missing)}"
+            )
 
-    def _docker(self) -> str:
-        return self._environ.get("BIP375_JADE_DOCKER", "docker")
+        self._runtime_dir = tempfile.TemporaryDirectory(prefix="bip375-jade-qemu-")
+        runtime_path = Path(self._runtime_dir.name)
+        runtime_flash = runtime_path / flash_image.name
+        runtime_efuse = runtime_path / efuse_image.name
+        shutil.copy2(flash_image, runtime_flash)
+        shutil.copy2(efuse_image, runtime_efuse)
+
+        port = _unused_port()
+        command = [
+            _qemu_executable(self._environ),
+            "-nographic",
+            "-machine",
+            "esp32",
+            "-m",
+            "4M",
+            "-drive",
+            f"file={runtime_flash},if=mtd,format=raw",
+            "-nic",
+            f"user,model=open_eth,id=lo0,hostfwd=tcp:127.0.0.1:{port}-:30121",
+            "-drive",
+            f"file={runtime_efuse},if=none,format=raw,id=efuse",
+            "-global",
+            "driver=nvram.esp32.efuse,property=drive,value=efuse",
+            "-serial",
+            "null",
+        ]
+        try:
+            self._qemu = self._process_factory(
+                command,
+                cwd=checkout_path,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+            )
+        except OSError as exc:
+            self.close()
+            raise WorkerRequestError("jade_start_failed", str(exc)) from exc
+        return f"tcp:127.0.0.1:{port}"
+
+
+def _unused_port() -> int:
+    with socket.socket() as listener:
+        listener.bind(("127.0.0.1", 0))
+        return listener.getsockname()[1]
+
+
+def _qemu_executable(environ: Mapping[str, str]) -> str:
+    configured = environ.get("BIP375_JADE_QEMU")
+    if configured:
+        return configured
+    discovered = shutil.which("qemu-system-xtensa")
+    if discovered:
+        return discovered
+    candidates = sorted(
+        Path.home().glob(".espressif/tools/qemu-xtensa/*/qemu/bin/qemu-system-xtensa"),
+        reverse=True,
+    )
+    if candidates:
+        return str(candidates[0])
+    raise WorkerRequestError(
+        "jade_configuration_missing",
+        "BIP375_JADE_QEMU is required when qemu-system-xtensa is not on PATH",
+    )
 
 
 def _decode_psbt(request: Mapping[str, Any]) -> bytes:

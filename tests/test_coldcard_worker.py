@@ -12,7 +12,9 @@ from bip375_interop.suites import SuiteName
 def make_source_checkout(root: Path) -> Path:
     checkout = root / "source"
     (checkout / "testing" / "data").mkdir(parents=True)
-    (checkout / "testing" / "run_sim_tests.py").write_text("source runner")
+    (checkout / "testing" / "run_sim_tests.py").write_text(
+        'tmp_dir = "/tmp/cc-simulators"\nsim = ColdcardSimulator(sim_args, segregate=True)'
+    )
     (checkout / "testing" / "test_musig2_silentpayments.py").write_text("source test")
     (checkout / "testing" / "test_musig2_sp_signers.py").write_text("source test")
     (checkout / "testing" / "test_silentpayments.py").write_text("source plain test")
@@ -21,6 +23,7 @@ def make_source_checkout(root: Path) -> Path:
     for name in MUSIG2_FIXTURES:
         (checkout / "testing" / "data" / name).write_text("source fixture")
     (checkout / "unix" / "work").mkdir(parents=True)
+    (checkout / "unix" / "simulator.py").write_text('tmp_dir = "/tmp/cc-simulators"')
     (checkout / "unix" / "work" / "state").write_text("source state")
     return checkout
 
@@ -40,6 +43,9 @@ def test_worker_overlays_fixtures_only_in_disposable_copy(tmp_path: Path):
         observed["source"] = (source / "testing" / "data" / MUSIG2_FIXTURES[0]).read_text()
         observed["fixture"] = (copied_testing / "data" / MUSIG2_FIXTURES[0]).read_text()
         observed["artifact_dir"] = kwargs["env"]["CC_SP_OUT"]
+        observed["path"] = kwargs["env"]["PATH"]
+        observed["runner_source"] = (copied_testing / "run_sim_tests.py").read_text()
+        observed["simulator_source"] = (copied_testing.parent / "unix" / "simulator.py").read_text()
         (copied_testing.parent / "unix" / "work" / "state").write_text("mutated copy")
         return subprocess.CompletedProcess(argv, 0)
 
@@ -60,7 +66,32 @@ def test_worker_overlays_fixtures_only_in_disposable_copy(tmp_path: Path):
     assert observed["source"] == "source fixture"
     assert observed["fixture"].startswith("external ")
     assert observed["artifact_dir"] == str(artifacts.resolve())
+    assert observed["path"].split(":")[0] == "/firmware"
+    assert '"/tmp/cc-simulators"' not in observed["runner_source"]
+    assert "simulators" in observed["runner_source"]
+    assert "ColdcardSimulator(sim_args, headless=args.headless, segregate=True)" in observed["runner_source"]
+    assert '"/tmp/cc-simulators"' not in observed["simulator_source"]
     assert (source / "unix" / "work" / "state").read_text() == "source state"
+
+
+def test_worker_rejects_vendor_failure_reported_with_zero_exit(tmp_path: Path):
+    source = make_source_checkout(tmp_path)
+    fixtures = tmp_path / "fixtures"
+    fixtures.mkdir()
+
+    def runner(argv, **kwargs):
+        return subprocess.CompletedProcess(argv, 0, "\nFAILED test_silentpayments.py\n", "")
+
+    result = run_worker(
+        source,
+        fixtures,
+        tmp_path / "artifacts",
+        SuiteName.BIP375,
+        "/firmware/python",
+        runner=runner,
+    )
+
+    assert result.returncode == 1
 
 
 def test_worker_selects_plain_native_test_without_overlay(tmp_path: Path):
@@ -87,6 +118,7 @@ def test_worker_selects_plain_native_test_without_overlay(tmp_path: Path):
         "test_silentpayments.py",
         "test_bip352_vectors.py",
     ]
+    assert all(command[-3:] == ["--multiproc", "--num-proc", "1"] for command in observed["argv"])
 
 
 def test_worker_rejects_artifacts_inside_source_checkout(tmp_path: Path):

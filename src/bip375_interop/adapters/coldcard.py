@@ -78,6 +78,30 @@ class ColdcardAdapter:
             problems.append(f"Coldcard Python environment is missing: {self.python_executable}")
         return problems
 
+    def plan_worker(
+        self, extra_env: Mapping[str, str] | None = None
+    ) -> CommandPlan:
+        """Launch one persistent, isolated Coldcard simulator worker."""
+
+        harness_src = Path(__file__).resolve().parents[2]
+        protocol_src = self.firmware_dir / "external" / "ckcc-protocol"
+        python_paths = [str(harness_src), str(protocol_src)]
+        inherited = os.environ.get("PYTHONPATH")
+        if inherited:
+            python_paths.append(inherited)
+        env = {
+            "PYTHONPATH": os.pathsep.join(python_paths),
+            "BIP375_COLDCARD_CHECKOUT": str(self.firmware_dir),
+            "BIP375_COLDCARD_PYTHON": self.python_executable,
+        }
+        env.update(extra_env or {})
+        return CommandPlan(
+            name="coldcard-jsonl-worker",
+            argv=(self.python_executable, "-u", "-m", "bip375_interop.coldcard_psbt_worker"),
+            cwd=self.firmware_dir,
+            env=env,
+        )
+
     def plan_build(self) -> tuple[CommandPlan, ...]:
         """Return Coldcard's documented simulator build sequence."""
         commands = (

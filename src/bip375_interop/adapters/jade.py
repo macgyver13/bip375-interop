@@ -1,4 +1,4 @@
-"""Adapter for Jade's QEMU build and existing BIP-375 test worker."""
+"""Adapter for Jade's native QEMU worker and existing BIP-375 test suite."""
 
 from __future__ import annotations
 
@@ -36,59 +36,22 @@ class JadeAdapter:
         firmware_dir: str | Path,
         *,
         python_executable: str = sys.executable,
-        docker_executable: str = "docker",
-        image: str = "bip375-interop-jade",
         device: str = "tcp:localhost:30121",
         runner: Runner = subprocess.run,
     ) -> None:
         self.firmware_dir = Path(firmware_dir).resolve()
         self.checkout = self.firmware_dir
         require_checkout(
-            self.firmware_dir, ("Dockerfile.qemu", "test_jade.py", "jadepy")
+            self.firmware_dir, ("build/flash_image.bin", "build/qemu_efuse.bin", "test_jade.py", "jadepy")
         )
         self.python_executable = python_executable
-        self.docker_executable = docker_executable
-        self.image = image
         self.device = device
         self._runner = runner
-
-    def plan_build(self) -> tuple[CommandPlan, ...]:
-        return (
-            CommandPlan(
-                name="jade-build-qemu",
-                argv=(
-                    self.docker_executable,
-                    "build",
-                    "-t",
-                    self.image,
-                    "-f",
-                    "Dockerfile.qemu",
-                    ".",
-                    "--build-arg",
-                    "QEMU_CONFIG_ARGS=--dev --ci --psram",
-                ),
-                cwd=self.firmware_dir,
-            ),
-        )
-
-    def plan_emulator(self) -> CommandPlan:
-        return CommandPlan(
-            name="jade-run-qemu",
-            argv=(
-                self.docker_executable,
-                "run",
-                "--rm",
-                "-p",
-                "30121:30121",
-                self.image,
-            ),
-            cwd=self.firmware_dir,
-        )
 
     def plan_worker(
         self, extra_env: Mapping[str, str] | None = None
     ) -> CommandPlan:
-        """Launch a worker that owns one isolated Jade QEMU container."""
+        """Launch a worker that owns one isolated native Jade QEMU process."""
 
         harness_src = Path(__file__).resolve().parents[2]
         python_paths = [str(self.firmware_dir), str(harness_src)]
@@ -98,8 +61,6 @@ class JadeAdapter:
         env = {
             "PYTHONPATH": os.pathsep.join(python_paths),
             "BIP375_JADE_CHECKOUT": str(self.firmware_dir),
-            "BIP375_JADE_IMAGE": self.image,
-            "BIP375_JADE_DOCKER": self.docker_executable,
         }
         env.update(extra_env or {})
         return CommandPlan(

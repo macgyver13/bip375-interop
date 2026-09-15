@@ -6,6 +6,7 @@ import argparse
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 from typing import Callable, Sequence
@@ -62,6 +63,20 @@ def _overlay_fixtures(copied_checkout: Path, fixture_dir: Path, suite: SuiteName
         shutil.copy2(source, data_dir / name)
 
 
+def _isolate_simulators(copied_checkout: Path, runtime_dir: Path) -> None:
+    """Give the disposable runner a private directory for segregated simulators."""
+    for relative_path in ("testing/run_sim_tests.py", "unix/simulator.py"):
+        path = copied_checkout / relative_path
+        source = path.read_text()
+        source = source.replace('"/tmp/cc-simulators"', repr(str(runtime_dir)))
+        if relative_path == "testing/run_sim_tests.py":
+            source = source.replace(
+                "ColdcardSimulator(sim_args, segregate=True)",
+                "ColdcardSimulator(sim_args, headless=args.headless, segregate=True)",
+            )
+        path.write_text(source)
+
+
 def _secp256k1_library() -> str | None:
     """Locate Homebrew's library when the test suite has no configured path."""
 
@@ -76,6 +91,31 @@ def _secp256k1_library() -> str | None:
         if Path(candidate).is_file():
             return candidate
     return None
+
+
+def _run_test_module(
+    runner: WorkerRunner,
+    command: list[str],
+    *,
+    cwd: Path,
+    env: dict[str, str],
+) -> subprocess.CompletedProcess:
+    """Run one vendor module and reject its zero-exit failure report."""
+    result = runner(
+        command,
+        cwd=cwd,
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    stdout = result.stdout or ""
+    stderr = result.stderr or ""
+    sys.stdout.write(stdout)
+    sys.stderr.write(stderr)
+    if result.returncode or "\nFAILED " in stdout:
+        return subprocess.CompletedProcess(result.args, 1, stdout, stderr)
+    return result
 
 
 def run_worker(
@@ -99,10 +139,14 @@ def run_worker(
     artifact_dir.mkdir(parents=True, exist_ok=True)
 
     with tempfile.TemporaryDirectory(prefix="bip375-coldcard-") as temporary:
-        copied_checkout = _copy_checkout(source_checkout, Path(temporary))
+        temporary_path = Path(temporary)
+        copied_checkout = _copy_checkout(source_checkout, temporary_path)
         _overlay_fixtures(copied_checkout, fixture_dir, suite)
+        _isolate_simulators(copied_checkout, temporary_path / "simulators")
 
         env = os.environ.copy()
+        python_directory = str(Path(python_executable).expanduser().parent)
+        env["PATH"] = python_directory + os.pathsep + env.get("PATH", "")
         env["CC_SP_OUT"] = str(artifact_dir)
         secp256k1_library = _secp256k1_library()
         if secp256k1_library:
@@ -115,14 +159,17 @@ def run_worker(
                 "--module",
                 module,
                 "--headless",
+                "--multiproc",
+                "--num-proc",
+                "1",
             ]
             if pytest_filter:
                 command.extend(("--pytest-k", pytest_filter))
-            result = runner(
+            result = _run_test_module(
+                runner,
                 command,
                 cwd=copied_checkout / "testing",
                 env=env,
-                check=False,
             )
             if result.returncode:
                 return result
