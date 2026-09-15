@@ -48,6 +48,7 @@ class JadeWorker:
         self._runtime_dir: tempfile.TemporaryDirectory[str] | None = None
         self._jade: Any | None = None
         self._mnemonic: str | None = None
+        self._registered_descriptor: str | None = None
         self._load_error: str | None = None
         self._api_factory = api_factory
         if self._api_factory is None:
@@ -61,7 +62,7 @@ class JadeWorker:
         return RuntimeCapabilities(
             backend=self.backend,
             plain_bip375=self._api_factory is not None,
-            musig2_sp=False,
+            musig2_sp=self._api_factory is not None,
             persistent=True,
             unavailable_reason=self._load_error,
         )
@@ -71,7 +72,8 @@ class JadeWorker:
             raise WorkerRequestError(
                 "unsupported", self._load_error or "Jade runtime is unavailable"
             )
-        if _required_string(request, "suite") != "bip375":
+        suite = _required_string(request, "suite")
+        if suite not in {"bip375", "musig2-sp"}:
             raise WorkerRequestError("unsupported", "Jade worker supports BIP-375 only")
         mnemonic = _required_string(request, "mnemonic")
         network = request.get("network", "regtest")
@@ -80,6 +82,9 @@ class JadeWorker:
         network = _NETWORKS.get(network, network)
         raw_psbt = _decode_psbt(request)
         jade = self._open(mnemonic)
+        if suite == "musig2-sp":
+            descriptor = _required_string(request, "descriptor")
+            self._register_descriptor(jade, network, descriptor)
         try:
             signed = bytes(jade.sign_psbt(network, raw_psbt))
         except Exception as exc:
@@ -88,6 +93,15 @@ class JadeWorker:
             "psbt": base64.b64encode(signed).decode("ascii"),
             "stage": "device-processed",
         }
+
+    def _register_descriptor(self, jade: Any, network: str, descriptor: str) -> None:
+        if self._registered_descriptor == descriptor:
+            return
+        try:
+            jade.register_descriptor(network, "bip375-interop", descriptor, {})
+        except Exception as exc:
+            raise WorkerRequestError("jade_setup_failed", str(exc)) from exc
+        self._registered_descriptor = descriptor
 
     def close(self) -> None:
         if self._jade is not None:
@@ -192,6 +206,7 @@ class JadeWorker:
             self._qemu = self._process_factory(
                 command,
                 cwd=checkout_path,
+                stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.PIPE,
             )

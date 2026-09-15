@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import random
 import sys
 from dataclasses import asdict, replace
 from pathlib import Path
@@ -10,6 +11,7 @@ from . import __version__
 from .checkouts import inspect_checkout
 from .config import LOCK_NAME, load_config, load_scenario, write_lock
 from .errors import InteropError
+from .suites import KeyArchitecture
 from .suites import get_suite
 from .suites import scenario_rounds
 from .adapters import BitSagaAdapter, ColdcardAdapter, JadeAdapter, SeedSignerAdapter
@@ -18,7 +20,54 @@ from .engine import run_rounds
 from .worker import WorkerClient
 from .smoke import run_coldcard_smoke, run_jade_smoke
 from .fixtures import build_bip375_fixture
-from .treasury import build_wallet_toml
+from .treasury import build_treasury_descriptor, build_wallet_toml
+
+
+def _add_signer_order_args(subparser: argparse.ArgumentParser) -> None:
+    order = subparser.add_mutually_exclusive_group()
+    order.add_argument(
+        "--signer-order",
+        help="comma-separated signer names giving each round's processing order "
+        "(must name every scenario signer exactly once); does not change the "
+        "descriptor's participant order, only the order devices are called in",
+    )
+    order.add_argument(
+        "--shuffle-signers",
+        action="store_true",
+        help="randomize each round's signer processing order (see --shuffle-seed)",
+    )
+    subparser.add_argument(
+        "--shuffle-seed",
+        type=int,
+        help="seed for --shuffle-signers; omit for a random seed, which is printed "
+        "so a run can be reproduced",
+    )
+
+
+def _resolve_signer_order(scenario, args) -> tuple[str, ...] | None:
+    names = tuple(signer.name for signer in scenario.signers)
+    if getattr(args, "signer_order", None):
+        order = tuple(part.strip() for part in args.signer_order.split(","))
+        if sorted(order) != sorted(names):
+            raise InteropError(
+                f"--signer-order must name every signer exactly once: {', '.join(names)}"
+            )
+        return order
+    if getattr(args, "shuffle_signers", False):
+        seed = args.shuffle_seed if args.shuffle_seed is not None else random.SystemRandom().randrange(2**32)
+        shuffled = list(names)
+        random.Random(seed).shuffle(shuffled)
+        print(f"shuffle-signers seed: {seed} -> order: {', '.join(shuffled)}", file=sys.stderr)
+        return tuple(shuffled)
+    return None
+
+
+def _reorder_rounds(rounds, order: tuple[str, ...]):
+    position = {name: index for index, name in enumerate(order)}
+    return tuple(
+        replace(round_spec, signers=tuple(sorted(round_spec.signers, key=lambda name: position[name])))
+        for round_spec in rounds
+    )
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -35,16 +84,25 @@ def _parser() -> argparse.ArgumentParser:
     validate.add_argument("scenario", type=Path)
     plan = sub.add_parser("plan")
     plan.add_argument("scenario", type=Path)
+    _add_signer_order_args(plan)
     run = sub.add_parser("run")
     run.add_argument("scenario", type=Path)
     run.add_argument("--psbt", required=True, type=Path)
+    _add_signer_order_args(run)
     generated = sub.add_parser("run-generated")
     generated.add_argument("scenario", type=Path)
+    _add_signer_order_args(generated)
     treasury = sub.add_parser("treasury-wallet")
     treasury.add_argument("seed_ids", nargs="+", help="published test seed ids, e.g. test-a test-b test-c")
     treasury.add_argument("--network", default="signet")
     treasury.add_argument("--last-derivation-index", type=int, default=0)
     treasury.add_argument("--change-derivation-index", type=int, default=0)
+    treasury.add_argument(
+        "--key-architecture",
+        choices=[item.value for item in KeyArchitecture],
+        default=KeyArchitecture.AGGREGATE_THEN_DERIVE.value,
+        help="where the multipath step lands; decides the descriptor shape",
+    )
     treasury.add_argument("--out", type=Path, help="write the wallet TOML here instead of stdout")
     return parser
 
@@ -58,6 +116,7 @@ def main(argv: list[str] | None = None) -> int:
                 network=args.network,
                 last_derivation_index=args.last_derivation_index,
                 change_derivation_index=args.change_derivation_index,
+                key_architecture=args.key_architecture,
             )
             if args.out:
                 args.out.write_text(text)
@@ -97,17 +156,28 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         scenario = load_scenario(args.scenario)
         suite = get_suite(scenario.suite)
-        suite.validate(scenario)
+        suite_config = suite.validate(scenario)
+        signer_order = _resolve_signer_order(scenario, args)
         if args.command == "plan":
+            rounds = scenario_rounds(scenario)
+            if signer_order is not None:
+                rounds = _reorder_rounds(rounds, signer_order)
             print(json.dumps([
                 {"phase": item.name, "signers": list(item.signers)}
-                for item in scenario_rounds(scenario)
+                for item in rounds
             ], indent=2))
             return 0
         if args.command in {"run", "run-generated"}:
             adapters = {}
             workers = {}
             run_artifacts = ArtifactRun(config.artifact_root, scenario.name)
+            descriptor = None
+            if scenario.suite == "musig2-sp":
+                descriptor = build_treasury_descriptor(
+                    [signer.seed_id for signer in scenario.signers],
+                    network=scenario.network,
+                    key_architecture=suite_config.key_architecture,
+                )
             try:
                 for signer in scenario.signers:
                     checkout_name = (
@@ -136,6 +206,7 @@ def main(argv: list[str] | None = None) -> int:
                         signer.seed_id,
                         run_artifacts.path / signer.name,
                         scenario.network,
+                        descriptor=descriptor,
                     )
                     adapters[signer.name] = adapter
                     workers[signer.name] = worker
@@ -144,7 +215,10 @@ def main(argv: list[str] | None = None) -> int:
                     if args.command == "run"
                     else build_bip375_fixture(scenario)
                 )
-                final_psbt = run_rounds(initial_psbt, scenario_rounds(scenario), workers, run_artifacts)
+                rounds = scenario_rounds(scenario)
+                if signer_order is not None:
+                    rounds = _reorder_rounds(rounds, signer_order)
+                final_psbt = run_rounds(initial_psbt, rounds, workers, run_artifacts)
                 manifest = run_artifacts.finalize({
                     "scenario": scenario.name,
                     "suite": scenario.suite,

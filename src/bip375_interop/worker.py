@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+import signal
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -48,6 +49,7 @@ class WorkerClient:
         self._mnemonic: str | None = None
         self._session_id: str | None = None
         self._network: str | None = None
+        self._descriptor: str | None = None
 
     def start(
         self,
@@ -55,6 +57,7 @@ class WorkerClient:
         seed_id: str,
         instance_dir: Path,
         network: str | None = None,
+        descriptor: str | None = None,
     ) -> WorkerHello:
         if self._process is not None:
             raise WorkerProtocolError("worker is already started")
@@ -65,6 +68,7 @@ class WorkerClient:
             list(self.argv), cwd=self.cwd, env=environment,
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             text=True, bufsize=1,
+            start_new_session=True,
         )
         response = self._request({"id": "capabilities", "op": "capabilities"})
         result = response.get("result", {})
@@ -86,6 +90,7 @@ class WorkerClient:
         self._mnemonic = mnemonic_for(seed_id)
         self._session_id = instance_dir.name
         self._network = network
+        self._descriptor = descriptor
         self.hello = WorkerHello(self.PROTOCOL, str(result["backend"]), suites)
         return self.hello
 
@@ -98,6 +103,8 @@ class WorkerClient:
         }
         if self._network is not None:
             request["network"] = self._network
+        if self._descriptor is not None:
+            request["descriptor"] = self._descriptor
         response = self._request(request)
         try:
             return base64.b64decode(response["result"]["psbt"], validate=True)
@@ -109,12 +116,35 @@ class WorkerClient:
         if process is None:
             return
         if process.poll() is None:
-            process.terminate()
+            self._signal_group(process, signal.SIGTERM)
         try:
             process.wait(timeout=5)
         except subprocess.TimeoutExpired:
-            process.kill()
+            self._signal_group(process, signal.SIGKILL)
             process.wait()
+
+    @staticmethod
+    def _signal_group(process: subprocess.Popen, sig: int) -> None:
+        """Signal the worker's whole process group, not just the worker itself.
+
+        Device workers spawn their own child (a Coldcard simulator, a Jade QEMU
+        instance) without starting a session of their own, so it stays in the
+        worker's process group. Signaling only the worker leaves that child
+        orphaned: a bare SIGTERM bypasses Python's `finally` blocks entirely,
+        so the worker's own `close()` (which would stop its child) never runs.
+        `start()` puts the worker in a new session so its group can be signaled
+        without also hitting the harness's own process.
+        """
+        if hasattr(os, "killpg") and hasattr(os, "getpgid"):
+            try:
+                os.killpg(os.getpgid(process.pid), sig)
+                return
+            except (ProcessLookupError, PermissionError, OSError):
+                pass
+        if sig == signal.SIGKILL:
+            process.kill()
+        else:
+            process.terminate()
 
     def _request(self, request: Mapping[str, Any]) -> dict[str, Any]:
         if self._process is None:

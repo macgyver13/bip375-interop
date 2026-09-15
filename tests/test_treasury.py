@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from bip375_interop.errors import ConfigurationError
+from bip375_interop.suites import KeyArchitecture
 from bip375_interop.treasury import build_treasury_descriptor, build_wallet_toml, derive_signer_xpub
 
 
@@ -35,6 +36,49 @@ def test_build_treasury_descriptor_requires_at_least_two_signers() -> None:
     pytest.importorskip("embit")
     with pytest.raises(ConfigurationError):
         build_treasury_descriptor(["test-a"])
+
+
+def test_build_treasury_descriptor_derive_then_aggregate_moves_the_multipath_step() -> None:
+    """The multipath step moves onto each participant, not the aggregate.
+
+    That placement is the only thing silent-pay's `parse_descriptor_signers`
+    uses to tell the two key architectures apart.
+    """
+
+    pytest.importorskip("embit")
+    descriptor = build_treasury_descriptor(
+        ["test-a", "test-b"], key_architecture=KeyArchitecture.DERIVE_THEN_AGGREGATE
+    )
+    assert descriptor.startswith("tr(musig(")
+    assert descriptor.endswith("))")
+    assert not descriptor.endswith(")/<0;1>/*)")
+    assert descriptor.count("/<0;1>/*") == 2
+
+
+def test_build_treasury_descriptor_accepts_the_architecture_as_a_string() -> None:
+    pytest.importorskip("embit")
+    assert build_treasury_descriptor(
+        ["test-a", "test-b"], key_architecture="derive-then-aggregate"
+    ) == build_treasury_descriptor(
+        ["test-a", "test-b"], key_architecture=KeyArchitecture.DERIVE_THEN_AGGREGATE
+    )
+
+
+def test_build_treasury_descriptor_rejects_an_unknown_architecture() -> None:
+    pytest.importorskip("embit")
+    with pytest.raises(ConfigurationError):
+        build_treasury_descriptor(["test-a", "test-b"], key_architecture="derive-then-hope")
+
+
+def test_build_wallet_toml_carries_the_architecture_through() -> None:
+    pytest.importorskip("embit")
+    pytest.importorskip("toml", reason="only needed to validate the rendered TOML")
+    import toml
+
+    text = build_wallet_toml(
+        ["test-a", "test-b"], network="regtest", key_architecture="derive-then-aggregate"
+    )
+    assert toml.loads(text)["descriptor"].endswith("))")
 
 
 def test_build_wallet_toml_round_trips_as_toml() -> None:

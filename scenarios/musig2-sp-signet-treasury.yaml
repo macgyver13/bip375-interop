@@ -1,0 +1,10 @@
+name: musig2-sp-signet-treasury
+suite: musig2-sp
+network: signet
+signers:
+  - {name: bitsaga-a, backend: bitsaga-seedsigner, seed_id: test-a}
+  - {name: bitsaga-b, backend: bitsaga-seedsigner, seed_id: test-b}
+  - {name: bitsaga-c, backend: bitsaga-seedsigner, seed_id: test-c}
+suite_config:
+  key_architecture: aggregate-then-derive
+  threshold: 3
