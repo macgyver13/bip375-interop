@@ -202,7 +202,17 @@ def scenario_rounds(scenario: Scenario) -> tuple[Round, ...]:
     if definition.name is SuiteName.MUSIG2_SP:
         return (Round("round1", names), Round("round2", names))
     mode = scenario.suite_config.get("contribution_mode", "per-input")
-    if mode == "global" or len(names) == 1:
+    # The contribute/resolve-sign/sign dance exists to collect every owner's
+    # ECDH share before a Silent Payment *output* can be resolved (BIP-375
+    # send). A scenario with no such output -- e.g. BIP-376 spend inputs
+    # settling to a plain P2WPKH/P2TR destination -- has nothing to collect,
+    # so each signer only needs one pass; a second "sign" round would hand a
+    # signer an already-fully-signed PSBT (Coldcard correctly rejects that as
+    # "completely signed already", so this is not just an optimization).
+    needs_sp_output_contribution = any(
+        item.get("type") == "silent-payment" for item in scenario.outputs
+    )
+    if mode == "global" or len(names) == 1 or not needs_sp_output_contribution:
         return (Round("resolve-sign", names),)
     return (
         Round("contribute", names[:-1]),

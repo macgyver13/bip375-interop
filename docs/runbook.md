@@ -38,8 +38,20 @@ All commands below assume `cd /Users/macgyver/src/bip375-interop && source .venv
 | `bip375-three-way` | bip375 | coldcard, jade, seedsigner | Blocked at `seedsigner-c` (see below); `coldcard-a`/`jade-b` contribute cleanly |
 | `bip375-seedsigner-jade-two-way` | bip375 | seedsigner, jade | Blocked (SeedSigner cannot co-own a plain BIP-375 send, see below) |
 | `bip375-seedsigner-coldcard-two-way` | bip375 | seedsigner, coldcard | Blocked, same root cause, confirmed against a second backend |
+| `bip376-coldcard-sp-spend-single` | bip375 (BIP-376) | coldcard | **Working** (spends its own previously-received SP UTXO) |
+| `bip376-jade-two-way-sp-spend-to-p2wpkh` | bip375 (BIP-376) | jade x2 | **Working end to end** |
+| `bip376-jade-two-way-sp-spend-to-p2tr` | bip375 (BIP-376) | jade x2 | **Working end to end** |
+| `bip376-jade-two-way-sp-spend-to-sp` | bip375 (BIP-376) | jade x2 | **Working end to end** (chained: spends an SP UTXO into a new SP output) |
+| `bip376-coldcard-jade-sp-spend-to-p2wpkh` | bip375 (BIP-376) | coldcard, jade | **Working end to end** |
+| `bip376-coldcard-jade-sp-spend-to-p2tr` | bip375 (BIP-376) | coldcard, jade | **Working end to end** |
+| `bip376-coldcard-jade-sp-spend-to-sp` | bip375 (BIP-376) | coldcard, jade | **Working end to end** (chained: spends an SP UTXO into a new SP output) |
+| `bip376-seedsigner-sp-spend-single` | bip375 (BIP-376) | seedsigner | **Working** |
+| `bip376-seedsigner-jade-sp-spend-to-p2wpkh` | bip375 (BIP-376) | seedsigner, jade | **Working end to end** (SeedSigner *can* co-own a BIP-376 spend, see below) |
+| `bip376-seedsigner-jade-sp-spend-to-p2tr` | bip375 (BIP-376) | seedsigner, jade | **Working end to end** |
+| `bip376-seedsigner-coldcard-sp-spend-to-p2wpkh` | bip375 (BIP-376) | seedsigner, coldcard | **Working end to end** |
+| `bip376-seedsigner-jade-sp-spend-to-sp` | bip375 (BIP-376) | seedsigner, jade | Blocked, same SP-*output* limitation as `bip375-seedsigner-jade-two-way` -- not a new finding |
 | `musig2-sp-coldcard-jade-two-way` | musig2-sp | coldcard, jade | **Working end to end** (signed, broadcast, confirmed, recipient-verified on regtest) |
-| `musig2-sp-jade-derive-first-two-way` | musig2-sp | jade x2 | **Working end to end**, verified via direct script only -- `cli.py run` doesn't build this descriptor shape yet, see below |
+| `musig2-sp-jade-derive-first-two-way` | musig2-sp | jade x2 | **Working end to end** (derive-then-aggregate; signed, broadcast, confirmed, recipient-verified) |
 | `musig2-sp-signet-treasury` | musig2-sp | bitsaga-seedsigner x3 | Blocked (BitSaga bug, see below) |
 | `musig2-sp-three-way` | musig2-sp | coldcard, jade, bitsaga-seedsigner | Partially working: round1 succeeds for coldcard+jade, blocked at bitsaga-c |
 | `frost-sp-reserved` | frost-sp | n/a | Intentionally unsupported (reserved suite identifier only) |
@@ -169,6 +181,76 @@ SeedSigner is the last signer here instead of the first. Last attempt:
 even be generated: it declared a P2TR input before `build_bip375_fixture` supported one,
 and a second `change` output, which the fixture builder's single-SP-output contract
 rejects -- simplified to one SP payment sized to leave a 1,000 sat fee.)
+
+## BIP-376 (Silent Payment spend) scenarios
+
+BIP-376 ("Spending Silent Payment outputs with PSBTs") is the spend-side counterpart to
+BIP-375: `PSBT_IN_SP_TWEAK` (0x20) and `PSBT_IN_SP_SPEND_BIP32_DERIVATION` (0x1f) let a
+signer spend a UTXO that is itself a previously-received Silent Payment, without
+per-input BIP-341 taproot derivation. `build_bip375_fixture` (`fixtures.py`) generates
+these with a new `sp-spend` input type, and now also accepts `p2wpkh`/`p2tr` (in
+addition to `silent-payment`) output types, so a scenario can spend an SP-received UTXO
+onward to a plain address or into a new Silent Payment. All scenarios below use
+`run-generated` (in-process fixture, no external `--psbt` needed).
+
+Every combination -- single Coldcard, two independent Jades, and mixed Coldcard+Jade --
+works end to end for all three destination types, live-verified via real signature
+fields (`PSBT_IN_TAP_KEY_SIG`) added by the actual simulator/QEMU firmware:
+
+```bash
+bip375-interop run-generated scenarios/bip376-coldcard-sp-spend-single.yaml
+bip375-interop run-generated scenarios/bip376-jade-two-way-sp-spend-to-p2wpkh.yaml
+bip375-interop run-generated scenarios/bip376-jade-two-way-sp-spend-to-p2tr.yaml
+bip375-interop run-generated scenarios/bip376-jade-two-way-sp-spend-to-sp.yaml
+bip375-interop run-generated scenarios/bip376-coldcard-jade-sp-spend-to-p2wpkh.yaml
+bip375-interop run-generated scenarios/bip376-coldcard-jade-sp-spend-to-p2tr.yaml
+bip375-interop run-generated scenarios/bip376-coldcard-jade-sp-spend-to-sp.yaml
+```
+
+**Real Coldcard derivation-path requirement found along the way**: BIP-376 spend keys
+use one fixed key per account (`352h/coin_type'/account'/0h/0`, not varied per UTXO
+like a receive path -- both Coldcard's `validate_silent_payment_inputs`
+(`shared/silentpayments.py`) and Jade's `wallet_is_expected_sp_spend_path` (`wallet.c`)
+enforce exactly this shape). The fixture's first attempt varied the last two path
+components per input index, which Coldcard correctly rejected
+(`"SP spend path key type must be 0h"`); fixed in `fixtures.py` to use the fixed
+5-component path for every `sp-spend` input owned by the same signer, distinguishing
+UTXOs by their individual `sp_tweak` instead, per spec.
+
+**Real harness round-scheduling gap found and fixed**: the `bip375` suite's per-input
+round schedule (`contribute` -> `resolve-sign` -> `sign`, in `suites.py`) exists so every
+owner's ECDH share can be collected before a Silent Payment *output* is resolved. A
+spend-only scenario settling to a plain P2WPKH/P2TR output has no such output to
+resolve, so both owners were already fully signed after only two of the three rounds --
+the redundant third round then handed a signer an already-complete PSBT. Jade silently
+tolerated this; Coldcard correctly rejected it (`"Transaction looks completely signed
+already?"`), which is what actually surfaced the bug. Fixed by making `scenario_rounds`
+check whether any scenario output is `type: silent-payment` and, if none is, scheduling
+a single round for all signers -- every existing scenario has such an output already, so
+this only changes behavior for the new spend-only case.
+
+**SeedSigner's earlier multi-owner blocker is narrower than first documented**:
+`bip375-seedsigner-jade-two-way` and `bip375-three-way` are blocked because upstream
+SeedSigner's embit dependency's `sign_with()` unconditionally calls the single-signer-only
+`derive_sp_outputs()` whenever the PSBT has an unresolved Silent Payment *output* -- that
+is a BIP-375 **send**-side limitation. It does not apply to BIP-376 **spend** inputs:
+`sign_with()` only calls `derive_sp_outputs()` `if self.has_sp_outputs`, and separately
+always calls `_sign_sp_spends()`, which resolves `sp_tweak` inputs generically via
+`resolve_input_privkey`/`match_sp_spend_base` regardless of how many other inputs are
+present or who owns them. Verified directly: `bip376-seedsigner-jade-sp-spend-to-p2wpkh`,
+`-to-p2tr`, and `bip376-seedsigner-coldcard-sp-spend-to-p2wpkh` all sign correctly with
+SeedSigner as a genuine co-owner alongside Jade/Coldcard -- real `PSBT_IN_TAP_KEY_SIG` on
+every input. `bip376-seedsigner-jade-sp-spend-to-sp` (same signers, but the output is a
+*new* Silent Payment) fails with the identical `SPValidationError` as before, confirming
+the boundary is precisely "can SeedSigner co-own SP *output* construction" (no), not "can
+SeedSigner co-own BIP-376 *input* spending" (yes).
+
+```bash
+bip375-interop run-generated scenarios/bip376-seedsigner-sp-spend-single.yaml
+bip375-interop run-generated scenarios/bip376-seedsigner-jade-sp-spend-to-p2wpkh.yaml
+bip375-interop run-generated scenarios/bip376-seedsigner-jade-sp-spend-to-p2tr.yaml
+bip375-interop run-generated scenarios/bip376-seedsigner-coldcard-sp-spend-to-p2wpkh.yaml
+```
 
 ## MuSig2-SP scenarios
 

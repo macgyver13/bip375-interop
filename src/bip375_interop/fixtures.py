@@ -11,18 +11,27 @@ from .test_seeds import mnemonic_for
 
 _SCAN_HEX = "027a487fc19fb769877b8742d6ea18118f3c4e72b1ea8c6de602a7ad4a41dbe068"
 _SPEND_HEX = "0361e1b1e9de5e42cb2007f7ca54b9e0d57ed13938fad56d3f19e57513a8fce039"
+_DEST_PUBKEY_HEX = "0230282f721a0742d05986818c9cbd71757394d4c6602cd6814d5647e50b57e28c"
 _BIP84_TEST_PATH = (0x80000054, 0x80000001, 0x80000000)
 _BIP86_TEST_PATH = (0x80000056, 0x80000001, 0x80000000)
+# BIP-376 spend key: one fixed key per account, per both Coldcard's
+# (silentpayments.py's validate_silent_payment_inputs) and Jade's
+# (wallet.c's wallet_is_expected_sp_spend_path) required shape --
+# 352h/coin_type'/account'/0h/0, not varied per UTXO like a receive path.
+# Uniqueness across payments to the same spend key comes from each input's
+# own sp_tweak, not from deriving a different base key per input.
+_BIP352_SPEND_PATH = (0x80000160, 0x80000001, 0x80000000, 0x80000000, 0)
+_OUTPUT_TYPES = {"silent-payment", "p2wpkh", "p2tr"}
 
 
 def build_bip375_fixture(scenario: Scenario) -> bytes:
     """Create an unresolved, per-input BIP-375 PSBTv2 from scenario intent.
 
-    This deliberately covers the narrow first mixed-device lane: one P2WPKH or
-    P2TR (key-path) input per configured owner and one Silent Payment output.
-    Every input is derived from a published emulator mnemonic and has
-    SIGHASH_ALL (P2WPKH) or SIGHASH_DEFAULT (P2TR) set before any device sees
-    it.
+    This deliberately covers the narrow first mixed-device lane: one P2WPKH,
+    P2TR (key-path), or BIP-376 sp-spend input per configured owner, and one
+    output of type silent-payment, p2wpkh, or p2tr. Every input is derived
+    from a published emulator mnemonic and has SIGHASH_ALL (P2WPKH, P2TR, and
+    sp-spend) or SIGHASH_DEFAULT set before any device sees it.
     """
 
     if scenario.suite != "bip375":
@@ -31,11 +40,14 @@ def build_bip375_fixture(scenario: Scenario) -> bytes:
         raise ConfigurationError("generated BIP-375 fixtures currently support regtest only")
     if not scenario.inputs:
         raise ConfigurationError("generated BIP-375 fixture requires at least one input")
-    silent_outputs = [item for item in scenario.outputs if item.get("type") == "silent-payment"]
-    if len(silent_outputs) != 1 or len(silent_outputs) != len(scenario.outputs):
-        raise ConfigurationError("generated BIP-375 fixture requires exactly one Silent Payment output")
+    if len(scenario.outputs) != 1 or scenario.outputs[0].get("type") not in _OUTPUT_TYPES:
+        raise ConfigurationError(
+            "generated BIP-375 fixture requires exactly one output of type "
+            "silent-payment, p2wpkh, or p2tr"
+        )
     try:
         from embit import bip32, bip39, ec, script
+        from embit.hashes import tagged_hash
         from embit.psbt import DerivationPath
         from embit.silent_payments import SilentPaymentData, SilentPaymentsPSBT
         from embit.silent_payments.psbt import SPInputScope, SPOutputScope
@@ -53,9 +65,10 @@ def build_bip375_fixture(scenario: Scenario) -> bytes:
         if owner not in signers:
             raise ConfigurationError(f"input {index} names unknown owner {owner!r}")
         input_type = item.get("type")
-        if input_type not in {"p2wpkh", "p2tr"}:
+        if input_type not in {"p2wpkh", "p2tr", "sp-spend"}:
             raise ConfigurationError(
-                "generated BIP-375 fixtures currently support P2WPKH and P2TR inputs only"
+                "generated BIP-375 fixtures currently support P2WPKH, P2TR, and "
+                "sp-spend (BIP-376 Silent Payment spend) inputs only"
             )
         amount = item.get("amount_sat")
         if not isinstance(amount, int) or amount <= 0:
@@ -72,7 +85,7 @@ def build_bip375_fixture(scenario: Scenario) -> bytes:
             scope.witness_utxo = TransactionOutput(amount, script.p2wpkh(pubkey))
             scope.bip32_derivations[pubkey] = DerivationPath(root.my_fingerprint, path)
             scope.sighash_type = 1
-        else:
+        elif input_type == "p2tr":
             path = (*_BIP86_TEST_PATH, 0, index)
             pubkey = root.derive(path).get_public_key()
             scope.witness_utxo = TransactionOutput(amount, script.p2tr(pubkey))
@@ -85,18 +98,46 @@ def build_bip375_fixture(scenario: Scenario) -> bytes:
             # taproot input's sighash type to explicit SIGHASH_ALL while signing,
             # which conflicts with a pre-set SIGHASH_DEFAULT under strict merge.
             scope.sighash_type = 1
+        else:
+            # sp-spend (BIP-376): this input is itself a previously-received
+            # Silent Payment output. Its output key is the owner's own spend
+            # key plus a per-input scalar (sp_tweak) -- not a BIP-341
+            # internal-key tweak, so build the script directly rather than via
+            # script.p2tr(). The Updater records sp_tweak plus a BIP-32 hint to
+            # the untweaked spend key so the owner can recompute and sign it.
+            path = _BIP352_SPEND_PATH
+            spend_hd = root.derive(path)
+            spend_pubkey = spend_hd.get_public_key()
+            tweak = tagged_hash("bip375-interop/sp-spend-test-tweak", bytes([index]))
+            output_key = spend_hd.key.sp_spend_tweak(tweak)
+            scope.witness_utxo = TransactionOutput(
+                amount, script.Script(b"\x51\x20" + output_key.xonly())
+            )
+            scope.sp_tweak = tweak
+            scope.sp_spend_bip32_derivations[spend_pubkey.sec()] = DerivationPath(
+                root.my_fingerprint, path
+            )
+            scope.sighash_type = 1
         psbt.add_input(scope)
         total += amount
 
-    output = silent_outputs[0]
+    output = scenario.outputs[0]
+    output_type = output["type"]
     amount = output.get("amount_sat")
     if not isinstance(amount, int) or amount <= 0 or amount >= total:
-        raise ConfigurationError("Silent Payment output amount must be positive and below input total")
-    destination = SPOutputScope()
-    destination.value = amount
-    destination.sp_data = SilentPaymentData(
-        ec.PublicKey.parse(unhexlify(_SCAN_HEX)),
-        ec.PublicKey.parse(unhexlify(_SPEND_HEX)),
-    )
+        raise ConfigurationError("output amount must be positive and below input total")
+    if output_type == "silent-payment":
+        destination = SPOutputScope()
+        destination.value = amount
+        destination.sp_data = SilentPaymentData(
+            ec.PublicKey.parse(unhexlify(_SCAN_HEX)),
+            ec.PublicKey.parse(unhexlify(_SPEND_HEX)),
+        )
+    else:
+        dest_pubkey = ec.PublicKey.parse(unhexlify(_DEST_PUBKEY_HEX))
+        dest_script = (
+            script.p2wpkh(dest_pubkey) if output_type == "p2wpkh" else script.p2tr(dest_pubkey)
+        )
+        destination = SPOutputScope(vout=TransactionOutput(amount, dest_script))
     psbt.add_output(destination)
     return psbt.serialize()

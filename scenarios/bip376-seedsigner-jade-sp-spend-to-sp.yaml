@@ -1,0 +1,13 @@
+name: bip376-seedsigner-jade-sp-spend-to-sp
+suite: bip375
+network: regtest
+signers:
+  - {name: seedsigner-a, backend: seedsigner, seed_id: test-a}
+  - {name: jade-b, backend: jade, seed_id: test-b}
+suite_config:
+  contribution_mode: per-input
+inputs:
+  - {owner: seedsigner-a, type: sp-spend, amount_sat: 100000}
+  - {owner: jade-b, type: sp-spend, amount_sat: 110000}
+outputs:
+  - {type: silent-payment, recipient_id: recipient-a, amount_sat: 209000}

@@ -24,11 +24,27 @@ def test_plain_bip375_schedule_returns_early_signers_for_second_pass():
             {"name": "b", "backend": "seedsigner", "seed_id": "test-b"},
         ],
         "suite_config": {"contribution_mode": "per-input"},
+        "outputs": [{"type": "silent-payment", "amount_sat": 100_000}],
     })
     assert [(item.name, item.signers) for item in scenario_rounds(scenario)] == [
         ("contribute", ("a",)),
         ("resolve-sign", ("b",)),
         ("sign", ("a",)),
+    ]
+
+
+def test_plain_bip375_schedule_is_single_pass_without_an_sp_output():
+    scenario = Scenario.from_dict({
+        "name": "spend-only", "suite": "bip375", "network": "regtest",
+        "signers": [
+            {"name": "a", "backend": "coldcard", "seed_id": "test-a"},
+            {"name": "b", "backend": "jade", "seed_id": "test-b"},
+        ],
+        "suite_config": {"contribution_mode": "per-input"},
+        "outputs": [{"type": "p2wpkh", "amount_sat": 100_000}],
+    })
+    assert [(item.name, item.signers) for item in scenario_rounds(scenario)] == [
+        ("resolve-sign", ("a", "b")),
     ]
 
 

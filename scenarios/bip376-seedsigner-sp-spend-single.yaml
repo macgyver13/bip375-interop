@@ -1,0 +1,11 @@
+name: bip376-seedsigner-sp-spend-single
+suite: bip375
+network: regtest
+signers:
+  - {name: seedsigner-a, backend: seedsigner, seed_id: test-a}
+suite_config:
+  contribution_mode: global
+inputs:
+  - {owner: seedsigner-a, type: sp-spend, amount_sat: 100000}
+outputs:
+  - {type: p2wpkh, amount_sat: 99000}
