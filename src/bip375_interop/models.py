@@ -45,6 +45,9 @@ class Scenario:
     suite_config: Mapping[str, Any] = field(default_factory=dict)
     inputs: tuple[Mapping[str, Any], ...] = ()
     outputs: tuple[Mapping[str, Any], ...] = ()
+    merge_policy: str = "strict"
+    verification: str = "full"
+    expect_warning: bool = False
 
     @classmethod
     def from_dict(cls, value: Mapping[str, Any]) -> "Scenario":
@@ -57,9 +60,17 @@ class Scenario:
         names = [signer.name for signer in signers]
         if len(names) != len(set(names)):
             raise ConfigurationError("signer names must be unique")
+        merge_policy = str(value.get("merge_policy", "strict"))
+        if merge_policy not in ("strict", "combiner"):
+            raise ConfigurationError(f"merge_policy must be strict or combiner, got {merge_policy!r}")
+        verification = str(value.get("verification", "full"))
+        if verification not in ("full", "structural"):
+            raise ConfigurationError(f"verification must be full or structural, got {verification!r}")
         return cls(
             name=str(value["name"]), suite=str(value["suite"]),
             network=str(value["network"]), signers=signers,
             suite_config=dict(value.get("suite_config", {})),
             inputs=tuple(value.get("inputs", ())), outputs=tuple(value.get("outputs", ())),
+            merge_policy=merge_policy, verification=verification,
+            expect_warning=bool(value.get("expect_warning", False)),
         )

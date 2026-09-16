@@ -359,6 +359,38 @@ bip375-interop treasury-wallet <seed_ids...> --network <net> [--out wallet.toml]
                                               # from the harness's published test seeds
 ```
 
+## Regression groups
+
+`check` selects every scenario that names a backend and runs its generated
+BIP-375 cases sequentially. It writes a JSON manifest and an HTML report under
+`artifacts/batches/`. The score only counts selected cases that could run:
+a MuSig2-SP case with no PSBT is shown as blocked rather than passing. A PSBT stored
+next to a scenario (`scenarios/<name>.psbt`, regenerated with `just musig2-psbt`) is
+bound automatically; `--psbt` overrides it.
+
+```bash
+bip375-interop check --project jade --dry-run  # review local changes, selection, prerequisites
+bip375-interop check --project jade            # run the selected generated cases
+bip375-interop check --project jade \
+  --psbt musig2-sp-coldcard-jade-two-way=out-cj/initial.psbt \
+  --psbt musig2-sp-jade-derive-first-two-way=out-dfa/initial.psbt
+bip375-interop check --project harness          # all scenarios, including blocked entries
+```
+
+By default the change audit compares the project checkout with `HEAD`, including
+untracked files. Pass `--since <revision>` to use a different baseline. The
+initial selection rule is intentionally conservative: any change to a backend
+selects all scenarios that use that backend.
+
+Supplying a MuSig2-SP PSBT includes that scenario in the batch and preserves
+its final PSBT artifact. It is reported as **completed**, rather than counted
+as structurally verified, until the separate `silent-pay` finalization,
+broadcast, confirmation, and recipient scan complete.
+
+The completion check requires resolved output scripts and a signature record on
+every generated input. This is structural evidence only: a passing score does
+not yet claim independent signature validation or regtest chain acceptance.
+
 ## Signer order (debug / fuzzing)
 
 `plan`, `run`, and `run-generated` all accept:
@@ -499,9 +531,14 @@ identically, not just parse compatibly.
 ## Known gotchas
 
 - **Coldcard reports regtest addresses with a `tb1p...` HRP, not `bcrt1p...`.** The
-  underlying witness program is identical (confirmed by decoding both); this is a
-  cosmetic simulator quirk, not a derivation bug. Compare raw witness-program bytes,
-  not address strings, when cross-checking Coldcard against another backend.
+  simulator's `testing/devtest/set_seed.py` hard-codes `settings.set('chain', 'XTN')`
+  (testnet) on every seed load, so the simulator always runs on testnet regardless of
+  what `network` a scenario requests; the harness accepts and ignores that parameter
+  for the Coldcard worker rather than validate a value it cannot apply. The underlying
+  witness program is identical to what regtest would produce (confirmed by decoding
+  both); this is a cosmetic simulator quirk, not a derivation bug. Compare raw
+  witness-program bytes, not address strings, when cross-checking Coldcard against
+  another backend.
 - **`bitsaga-seedsigner` crashes signing any PSBT with a real silent-payment output**
   (`KeyError: 0` in `musig2_psbt.py`'s `_sp_groups`/`sp_scan_keys`). Affects
   `musig2-sp-three-way` and `musig2-sp-signet-treasury`. Fix belongs upstream in

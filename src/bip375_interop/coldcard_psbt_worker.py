@@ -37,6 +37,8 @@ class ColdcardPsbtWorker:
         self._process_factory = process_factory
         self._sleep = sleeper
         self._simulator: subprocess.Popen[bytes] | None = None
+        self._simulator_stdout: Any | None = None
+        self._simulator_stderr: Any | None = None
         self._device: Any | None = None
         self._mnemonic: str | None = None
         self._seed_script: Path | None = None
@@ -65,11 +67,8 @@ class ColdcardPsbtWorker:
         suite = _required_string(request, "suite")
         if suite not in {"bip375", "musig2-sp"}:
             raise WorkerRequestError("unsupported", "Coldcard worker supports BIP-375 only")
-        network = request.get("network", "regtest")
-        if network not in {"regtest", "testnet"}:
-            raise WorkerRequestError(
-                "unsupported", "Coldcard worker supports regtest or testnet only"
-            )
+        # The simulator always runs on testnet (set_seed.py hard-codes chain=XTN);
+        # any requested network is accepted but has no effect on the simulator's chain.
         mnemonic = _required_string(request, "mnemonic")
         psbt = _decode_psbt(request)
         device = self._open(mnemonic)
@@ -80,6 +79,7 @@ class ColdcardPsbtWorker:
             length, digest = device.upload_file(psbt)
             packer = self._protocol_packer()
             device.send_recv(packer.sign_transaction(length, digest, False))
+            title, body = self._capture_story(device)
             device.send_recv(packer.sim_keypress(b"y"), timeout=None)
             signed = self._download_signed_psbt(device, packer)
             device.send_recv(packer.sim_keypress(b"x"), timeout=None)
@@ -88,6 +88,7 @@ class ColdcardPsbtWorker:
         return {
             "psbt": base64.b64encode(signed).decode("ascii"),
             "stage": "device-processed",
+            "story": {"title": title, "body": body},
         }
 
     def close(self) -> None:
@@ -99,6 +100,11 @@ class ColdcardPsbtWorker:
                 except subprocess.TimeoutExpired:
                     self._simulator.kill()
             self._simulator = None
+        for stream in (self._simulator_stdout, self._simulator_stderr):
+            if stream is not None:
+                stream.close()
+        self._simulator_stdout = None
+        self._simulator_stderr = None
         self._device = None
 
     def _open(self, mnemonic: str) -> Any:
@@ -143,13 +149,23 @@ class ColdcardPsbtWorker:
         self._seed_script = source / "testing" / "devtest" / "set_seed.py"
         env = self._environ.copy()
         env["PATH"] = str(Path(python).parent) + os.pathsep + env.get("PATH", "")
+        stdout_target: Any = subprocess.DEVNULL
+        stderr_target: Any = subprocess.DEVNULL
+        instance_dir = self._environ.get("BIP375_WORKER_INSTANCE_DIR")
+        if instance_dir:
+            log_dir = Path(instance_dir)
+            log_dir.mkdir(parents=True, exist_ok=True)
+            self._simulator_stdout = (log_dir / "simulator.stdout.log").open("wb")
+            self._simulator_stderr = (log_dir / "simulator.stderr.log").open("wb")
+            stdout_target = self._simulator_stdout
+            stderr_target = self._simulator_stderr
         self._simulator = self._process_factory(
             [python, "simulator.py", "--headless", "--segregate"],
             cwd=source / "unix",
             env=env,
             stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stdout=stdout_target,
+            stderr=stderr_target,
         )
         socket_path = Path(f"/tmp/ckcc-simulator-{self._simulator.pid}.sock")
         deadline = time.monotonic() + float(
@@ -191,6 +207,31 @@ class ColdcardPsbtWorker:
         )
         device.start_encryption()
         device.check_mitm()
+
+    @staticmethod
+    def _capture_story(device: Any) -> tuple[str, str]:
+        """Read the simulator's on-screen story before approving it blindly.
+
+        Mirrors ``_cap_story`` in coldcard-firmware/testing/core_fixtures.py,
+        using the same unencrypted EXEC channel ``_set_mnemonic`` uses.
+        """
+        chunks: list[bytes] = []
+        offset = 0
+        while True:
+            command = (
+                "data = '\\0'.join(sim_display.story or []).encode(); "
+                f"RV.write(data[{offset}:{offset + 2048}])"
+            )
+            chunk = device.send_recv(b"EXEC" + command.encode("utf-8"), encrypt=False)
+            chunks.append(chunk)
+            if len(chunk) < 2048:
+                break
+            offset += 2048
+        raw = b"".join(chunks).decode()
+        if not raw:
+            return "", ""
+        title, _, body = raw.partition("\0")
+        return title, body
 
     @staticmethod
     def _download_signed_psbt(device: Any, packer: Any) -> bytes:

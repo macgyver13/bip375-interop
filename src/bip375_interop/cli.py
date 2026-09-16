@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import random
 import sys
@@ -16,11 +17,14 @@ from .suites import get_suite
 from .suites import scenario_rounds
 from .adapters import BitSagaAdapter, ColdcardAdapter, JadeAdapter, SeedSignerAdapter
 from .artifacts import ArtifactRun
+from .batch import BatchRun, CaseResult
+from .catalog import changed_files, discover, select
 from .engine import run_rounds
 from .worker import WorkerClient
 from .smoke import run_coldcard_smoke, run_jade_smoke
 from .fixtures import build_bip375_fixture
 from .treasury import build_treasury_descriptor, build_wallet_toml
+from .verification import verify_bip375_completion, verify_musig2_sp_completion
 
 
 def _add_signer_order_args(subparser: argparse.ArgumentParser) -> None:
@@ -92,6 +96,18 @@ def _parser() -> argparse.ArgumentParser:
     generated = sub.add_parser("run-generated")
     generated.add_argument("scenario", type=Path)
     _add_signer_order_args(generated)
+    check = sub.add_parser("check", help="run a project regression group and write a report")
+    check.add_argument("--project", default="harness", choices=(
+        "harness", "coldcard", "jade", "seedsigner", "bitsaga-seedsigner",
+    ))
+    check.add_argument("--profile", default="affected", choices=("affected", "full"))
+    check.add_argument("--scenarios-dir", type=Path, default=Path("scenarios"))
+    check.add_argument("--since", default="HEAD", help="Git revision used to inspect local changes")
+    check.add_argument(
+        "--psbt", action="append", default=[], metavar="SCENARIO=PATH",
+        help="bind a prepared initial PSBT to a MuSig2-SP scenario; may be repeated",
+    )
+    check.add_argument("--dry-run", action="store_true", help="show the selection without starting workers")
     treasury = sub.add_parser("treasury-wallet")
     treasury.add_argument("seed_ids", nargs="+", help="published test seed ids, e.g. test-a test-b test-c")
     treasury.add_argument("--network", default="signet")
@@ -105,6 +121,149 @@ def _parser() -> argparse.ArgumentParser:
     )
     treasury.add_argument("--out", type=Path, help="write the wallet TOML here instead of stdout")
     return parser
+
+
+def _start_workers(config, scenario, run_artifacts, descriptor: str | None = None):
+    """Start each signer's worker, recording an inspected checkout state per signer."""
+
+    workers = {}
+    states = []
+    for signer in scenario.signers:
+        checkout_name = (
+            "bitsaga-seedsigner" if signer.backend in {"bitsaga", "bitsaga-seedsigner"}
+            else signer.backend
+        )
+        checkout = config.checkouts.get(checkout_name)
+        if checkout is None:
+            raise InteropError(f"missing checkout configuration for {checkout_name}")
+        states.append(inspect_checkout(checkout, config.allow_dirty))
+        adapter = {
+            "seedsigner": SeedSignerAdapter,
+            "jade": JadeAdapter,
+            "coldcard": ColdcardAdapter,
+            "bitsaga": BitSagaAdapter,
+            "bitsaga-seedsigner": BitSagaAdapter,
+        }.get(signer.backend)
+        if adapter is None:
+            raise InteropError(f"backend {signer.backend} has no external PSBT worker yet")
+        plan = adapter(checkout.path).plan_worker()
+        worker = WorkerClient(plan.argv, cwd=plan.cwd, env=plan.env)
+        worker.start(
+            scenario.suite, signer.seed_id, run_artifacts.path / signer.name,
+            scenario.network, descriptor=descriptor,
+        )
+        workers[signer.name] = worker
+    return workers, states
+
+
+def _run_generated_scenario(config, scenario, signer_order: tuple[str, ...] | None = None) -> tuple[Path, Path, int]:
+    """Run one generated BIP-375 scenario with durable evidence on failure."""
+
+    run_artifacts = ArtifactRun(config.artifact_root, scenario.name)
+    workers, states = {}, []
+    try:
+        workers, states = _start_workers(config, scenario, run_artifacts)
+        initial_psbt = build_bip375_fixture(scenario)
+        rounds = scenario_rounds(scenario)
+        if signer_order is not None:
+            rounds = _reorder_rounds(rounds, signer_order)
+        final_psbt, repairs = run_rounds(
+            initial_psbt, rounds, workers, run_artifacts, scenario.merge_policy, scenario=scenario,
+        )
+        verify_bip375_completion(scenario, final_psbt)
+        manifest = run_artifacts.finalize({
+            "scenario": scenario.name,
+            "suite": scenario.suite,
+            "signers": [asdict(signer) for signer in scenario.signers],
+            "rounds": [{"phase": item.name, "signers": list(item.signers)} for item in rounds],
+            "verification": scenario.verification,
+            "checkouts": [asdict(state) for state in states],
+            "merge_policy": scenario.merge_policy,
+            "repairs": list(repairs),
+        })
+        return run_artifacts.path / "final.psbt", manifest, len(final_psbt)
+    except Exception as exc:
+        run_artifacts.finalize({
+            "scenario": scenario.name,
+            "suite": scenario.suite,
+            "status": "failed",
+            "error": str(exc),
+            "checkouts": [asdict(state) for state in states],
+        })
+        raise
+    finally:
+        for worker in workers.values():
+            worker.stop()
+
+
+def _run_psbt_scenario(
+    config, scenario, psbt_path: Path, signer_order: tuple[str, ...] | None = None,
+) -> tuple[Path, Path, int]:
+    """Run an externally prepared PSBT and retain provenance on every outcome."""
+
+    run_artifacts = ArtifactRun(config.artifact_root, scenario.name)
+    workers, states = {}, []
+    try:
+        suite_config = get_suite(scenario.suite).validate(scenario)
+        descriptor = None
+        if scenario.suite == "musig2-sp":
+            descriptor = build_treasury_descriptor(
+                [signer.seed_id for signer in scenario.signers],
+                network=scenario.network,
+                key_architecture=suite_config.key_architecture,
+            )
+        workers, states = _start_workers(config, scenario, run_artifacts, descriptor=descriptor)
+        psbt_bytes = psbt_path.read_bytes()
+        musig2_hook = (
+            (lambda phase, snapshot: verify_musig2_sp_completion(scenario, phase, snapshot))
+            if scenario.suite == "musig2-sp" else None
+        )
+        rounds = scenario_rounds(scenario)
+        if signer_order is not None:
+            rounds = _reorder_rounds(rounds, signer_order)
+        final_psbt, repairs = run_rounds(
+            psbt_bytes, rounds, workers, run_artifacts, scenario.merge_policy,
+            scenario=scenario, on_round_complete=musig2_hook,
+        )
+        if scenario.suite == "bip375":
+            verify_bip375_completion(scenario, final_psbt)
+        manifest = run_artifacts.finalize({
+            "scenario": scenario.name,
+            "suite": scenario.suite,
+            "input_psbt": str(psbt_path),
+            "input_psbt_sha256": hashlib.sha256(psbt_bytes).hexdigest(),
+            "descriptor": descriptor,
+            "rounds": [{"phase": item.name, "signers": list(item.signers)} for item in rounds],
+            "verification": scenario.verification,
+            "checkouts": [asdict(state) for state in states],
+            "merge_policy": scenario.merge_policy,
+            "repairs": list(repairs),
+        })
+        return run_artifacts.path / "final.psbt", manifest, len(final_psbt)
+    except Exception as exc:
+        run_artifacts.finalize({
+            "scenario": scenario.name,
+            "suite": scenario.suite,
+            "status": "failed",
+            "error": str(exc),
+            "checkouts": [asdict(state) for state in states],
+        })
+        raise
+    finally:
+        for worker in workers.values():
+            worker.stop()
+
+
+def _psbt_bindings(values: list[str]) -> dict[str, Path]:
+    bindings = {}
+    for value in values:
+        name, separator, raw_path = value.partition("=")
+        if not separator or not name or not raw_path:
+            raise InteropError("--psbt must use SCENARIO=PATH")
+        if name in bindings:
+            raise InteropError(f"--psbt supplied more than once for {name}")
+        bindings[name] = Path(raw_path)
+    return bindings
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -154,9 +313,81 @@ def main(argv: list[str] | None = None) -> int:
                 "bytes": size,
             }, indent=2))
             return 0
+        if args.command == "check":
+            entries = select(discover(args.scenarios_dir), args.project, args.profile)
+            bindings = _psbt_bindings(args.psbt)
+            selected_names = {entry.scenario.name for entry in entries}
+            unknown = sorted(bindings.keys() - selected_names)
+            if unknown:
+                raise InteropError(f"--psbt names no selected scenario: {', '.join(unknown)}")
+            # An initial PSBT stored next to its scenario is bound unless --psbt overrides it.
+            for entry in entries:
+                stored = entry.path.with_suffix(".psbt")
+                if not entry.runnable_generated and stored.exists():
+                    bindings.setdefault(entry.scenario.name, stored)
+            checkout = config.checkouts.get(args.project)
+            if args.project != "harness" and checkout is None:
+                raise InteropError(f"missing checkout configuration for {args.project}")
+            source_root = Path.cwd() if args.project == "harness" else checkout.path
+            changes = changed_files(source_root, args.since)
+            if args.dry_run:
+                print(json.dumps({
+                    "project": args.project,
+                    "since": args.since,
+                    "changed_files": list(changes),
+                    "selection_policy": "all backend scenarios (conservative initial mapping)",
+                    "cases": [
+                        {
+                            "scenario": entry.scenario.name,
+                            "path": str(entry.path),
+                            "status": (
+                                "selected" if entry.runnable_generated or entry.scenario.name in bindings
+                                else "blocked"
+                            ),
+                            "reason": (
+                                "transport-only: finalize and verify on-chain after the run"
+                                if entry.scenario.name in bindings and not entry.runnable_generated
+                                else entry.reason
+                            ),
+                        }
+                        for entry in entries
+                    ],
+                }, indent=2))
+                return 0
+            batch = BatchRun(config.artifact_root, args.project)
+            for entry in entries:
+                psbt_path = bindings.get(entry.scenario.name)
+                if not entry.runnable_generated and psbt_path is None:
+                    batch.add(CaseResult(entry.scenario.name, "blocked", entry.reason))
+                    continue
+                try:
+                    if entry.runnable_generated:
+                        _, manifest, _ = _run_generated_scenario(config, entry.scenario)
+                        batch.add(CaseResult(entry.scenario.name, "passed", artifact=str(manifest)))
+                    elif not psbt_path.is_file():
+                        batch.add(CaseResult(entry.scenario.name, "failed", f"PSBT is missing: {psbt_path}"))
+                    else:
+                        _, manifest, _ = _run_psbt_scenario(config, entry.scenario, psbt_path)
+                        batch.add(CaseResult(
+                            entry.scenario.name, "completed",
+                            "transport and strict merge completed; finalize and verify on-chain",
+                            str(manifest),
+                        ))
+                except InteropError as exc:
+                    batch.add(CaseResult(entry.scenario.name, "failed", str(exc)))
+            manifest, report = batch.finalize()
+            passed = sum(item.status == "passed" for item in batch.results)
+            required = sum(item.status in {"passed", "failed"} for item in batch.results)
+            print(json.dumps({
+                "regression_health": None if not required else round(100 * passed / required),
+                "passed": passed,
+                "required": required,
+                "report": str(report),
+                "manifest": str(manifest),
+            }, indent=2))
+            return 0 if passed == required else 1
         scenario = load_scenario(args.scenario)
-        suite = get_suite(scenario.suite)
-        suite_config = suite.validate(scenario)
+        get_suite(scenario.suite).validate(scenario)
         signer_order = _resolve_signer_order(scenario, args)
         if args.command == "plan":
             rounds = scenario_rounds(scenario)
@@ -167,72 +398,18 @@ def main(argv: list[str] | None = None) -> int:
                 for item in rounds
             ], indent=2))
             return 0
-        if args.command in {"run", "run-generated"}:
-            adapters = {}
-            workers = {}
-            run_artifacts = ArtifactRun(config.artifact_root, scenario.name)
-            descriptor = None
-            if scenario.suite == "musig2-sp":
-                descriptor = build_treasury_descriptor(
-                    [signer.seed_id for signer in scenario.signers],
-                    network=scenario.network,
-                    key_architecture=suite_config.key_architecture,
-                )
-            try:
-                for signer in scenario.signers:
-                    checkout_name = (
-                        "bitsaga-seedsigner" if signer.backend in {"bitsaga", "bitsaga-seedsigner"}
-                        else signer.backend
-                    )
-                    checkout = config.checkouts.get(checkout_name)
-                    if checkout is None:
-                        raise InteropError(f"missing checkout configuration for {checkout_name}")
-                    if signer.backend == "seedsigner":
-                        adapter = SeedSignerAdapter(checkout.path)
-                    elif signer.backend == "jade":
-                        adapter = JadeAdapter(checkout.path)
-                    elif signer.backend == "coldcard":
-                        adapter = ColdcardAdapter(checkout.path)
-                    elif signer.backend in {"bitsaga", "bitsaga-seedsigner"}:
-                        adapter = BitSagaAdapter(checkout.path)
-                    else:
-                        raise InteropError(
-                            f"backend {signer.backend} has no external PSBT worker yet"
-                        )
-                    plan = adapter.plan_worker()
-                    worker = WorkerClient(plan.argv, cwd=plan.cwd, env=plan.env)
-                    worker.start(
-                        scenario.suite,
-                        signer.seed_id,
-                        run_artifacts.path / signer.name,
-                        scenario.network,
-                        descriptor=descriptor,
-                    )
-                    adapters[signer.name] = adapter
-                    workers[signer.name] = worker
-                initial_psbt = (
-                    args.psbt.read_bytes()
-                    if args.command == "run"
-                    else build_bip375_fixture(scenario)
-                )
-                rounds = scenario_rounds(scenario)
-                if signer_order is not None:
-                    rounds = _reorder_rounds(rounds, signer_order)
-                final_psbt = run_rounds(initial_psbt, rounds, workers, run_artifacts)
-                manifest = run_artifacts.finalize({
-                    "scenario": scenario.name,
-                    "suite": scenario.suite,
-                    "signers": [asdict(signer) for signer in scenario.signers],
-                    "checkouts": [],
-                })
-                print(json.dumps({
-                    "final_psbt": str(run_artifacts.path / "final.psbt"),
-                    "manifest": str(manifest), "bytes": len(final_psbt),
-                }, indent=2))
-                return 0
-            finally:
-                for worker in workers.values():
-                    worker.stop()
+        if args.command == "run-generated":
+            final_psbt, manifest, size = _run_generated_scenario(config, scenario, signer_order)
+            print(json.dumps({
+                "final_psbt": str(final_psbt), "manifest": str(manifest), "bytes": size,
+            }, indent=2))
+            return 0
+        if args.command == "run":
+            final_psbt, manifest, size = _run_psbt_scenario(config, scenario, args.psbt, signer_order)
+            print(json.dumps({
+                "final_psbt": str(final_psbt), "manifest": str(manifest), "bytes": size,
+            }, indent=2))
+            return 0
         print(f"valid: {scenario.name} ({scenario.suite})")
         return 0
     except InteropError as exc:
