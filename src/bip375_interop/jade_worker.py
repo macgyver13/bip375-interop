@@ -45,6 +45,8 @@ class JadeWorker:
         self._sleep = sleeper
         self._process_factory = process_factory
         self._qemu: subprocess.Popen[bytes] | None = None
+        self._qemu_stdout: Any | None = None
+        self._qemu_stderr: Any | None = None
         self._runtime_dir: tempfile.TemporaryDirectory[str] | None = None
         self._jade: Any | None = None
         self._mnemonic: str | None = None
@@ -118,6 +120,11 @@ class JadeWorker:
                 except subprocess.TimeoutExpired:
                     self._qemu.kill()
             self._qemu = None
+        for stream in (self._qemu_stdout, self._qemu_stderr):
+            if stream is not None:
+                stream.close()
+        self._qemu_stdout = None
+        self._qemu_stderr = None
         if self._runtime_dir is not None:
             self._runtime_dir.cleanup()
             self._runtime_dir = None
@@ -202,13 +209,23 @@ class JadeWorker:
             "-serial",
             "null",
         ]
+        stdout_target: Any = subprocess.DEVNULL
+        stderr_target: Any = subprocess.DEVNULL
+        instance_dir = self._environ.get("BIP375_WORKER_INSTANCE_DIR")
+        if instance_dir:
+            log_dir = Path(instance_dir)
+            log_dir.mkdir(parents=True, exist_ok=True)
+            self._qemu_stdout = (log_dir / "qemu.stdout.log").open("wb")
+            self._qemu_stderr = (log_dir / "qemu.stderr.log").open("wb")
+            stdout_target = self._qemu_stdout
+            stderr_target = self._qemu_stderr
         try:
             self._qemu = self._process_factory(
                 command,
                 cwd=checkout_path,
                 stdin=subprocess.DEVNULL,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.PIPE,
+                stdout=stdout_target,
+                stderr=stderr_target,
             )
         except OSError as exc:
             self.close()

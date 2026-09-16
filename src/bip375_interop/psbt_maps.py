@@ -124,55 +124,45 @@ def parse_psbt(data: bytes) -> PsbtV2:
     return PsbtV2(globals_map, tuple(inputs), tuple(outputs))
 
 
-def merge_psbts(base: bytes, contribution: bytes) -> bytes:
-    """Merge a signer contribution without permitting any mutation.
+MERGE_POLICIES = ("strict", "combiner")
 
-    Existing records must agree byte-for-byte.  Missing records from the
-    contribution are harmless; new records are appended in contribution order.
-    Required PSBTv2 transaction fields must exist in both documents and match.
+
+def merge_psbts(
+    base: bytes, contribution: bytes, merge_policy: str = "strict"
+) -> tuple[bytes, tuple[FieldChange, ...]]:
+    """Merge a signer contribution without permitting any silent mutation.
+
+    Existing records must agree byte-for-byte.  New records are appended in
+    contribution order.  Required PSBTv2 transaction fields must exist in
+    both documents and match.  A record the contribution drops is either a
+    ``strict`` failure naming the field, or a ``combiner`` repair: the base
+    value is restored and returned alongside the merged PSBT so callers can
+    record it.
     """
 
-    merged = merge_parsed_psbts(parse_psbt(base), parse_psbt(contribution))
-    return merged.serialize()
+    merged, repairs = merge_parsed_psbts(parse_psbt(base), parse_psbt(contribution), merge_policy)
+    return merged.serialize(), repairs
 
 
-def merge_parsed_psbts(base: PsbtV2, contribution: PsbtV2) -> PsbtV2:
+def merge_parsed_psbts(
+    base: PsbtV2, contribution: PsbtV2, merge_policy: str = "strict"
+) -> tuple[PsbtV2, tuple[FieldChange, ...]]:
     """Object-level equivalent of :func:`merge_psbts`."""
 
+    if merge_policy not in MERGE_POLICIES:
+        raise ValueError(f"unknown merge_policy {merge_policy!r}")
     _require_same_transaction(base, contribution)
-    globals_map = _merge_map(base.globals, contribution.globals, "global", None)
-    if _resolves_silent_payment_output(base, contribution):
-        globals_map = _clear_tx_modifiable_if_omitted(
-            base.globals, contribution.globals, globals_map
-        )
+    repairs: list[FieldChange] = []
+    globals_map = _merge_map(base.globals, contribution.globals, "global", None, merge_policy, repairs)
     inputs = tuple(
-        _merge_map(left, right, "input", index)
+        _merge_map(left, right, "input", index, merge_policy, repairs)
         for index, (left, right) in enumerate(zip(base.inputs, contribution.inputs))
     )
     outputs = tuple(
-        _merge_map(left, right, "output", index)
+        _merge_map(left, right, "output", index, merge_policy, repairs)
         for index, (left, right) in enumerate(zip(base.outputs, contribution.outputs))
     )
-    return PsbtV2(globals_map, inputs, outputs)
-
-
-def _resolves_silent_payment_output(base: PsbtV2, contribution: PsbtV2) -> bool:
-    return any(
-        left.get(b"\x09") is not None
-        and left.get(b"\x04") is None
-        and right.get(b"\x04") is not None
-        for left, right in zip(base.outputs, contribution.outputs)
-    )
-
-
-def _clear_tx_modifiable_if_omitted(
-    base: PsbtMap, contribution: PsbtMap, merged: PsbtMap
-) -> PsbtMap:
-    """Treat an omitted optional zero flag as a BIP-375 resolution clear."""
-
-    if base.get(b"\x06") is None or contribution.get(b"\x06") is not None:
-        return merged
-    return PsbtMap(tuple(entry for entry in merged.entries if entry.key != b"\x06"))
+    return PsbtV2(globals_map, inputs, outputs), tuple(repairs)
 
 
 def semantic_diff(before: bytes | PsbtV2, after: bytes | PsbtV2) -> DiffSummary:
@@ -349,10 +339,16 @@ def _compare_protected(
 
 
 def _merge_map(
-    base: PsbtMap, contribution: PsbtMap, scope: str, index: int | None
+    base: PsbtMap,
+    contribution: PsbtMap,
+    scope: str,
+    index: int | None,
+    merge_policy: str,
+    repairs: list[FieldChange],
 ) -> PsbtMap:
     entries = list(base.entries)
     known = {entry.key: entry.value for entry in base.entries}
+    contributed_keys = {entry.key for entry in contribution.entries}
     location = scope if index is None else f"{scope} {index}"
     for entry in contribution.entries:
         existing = known.get(entry.key)
@@ -376,6 +372,24 @@ def _merge_map(
             continue
         entries.append(entry)
         known[entry.key] = entry.value
+    for entry in base.entries:
+        if entry.key in contributed_keys:
+            continue
+        field = _field_name(scope, entry)
+        if merge_policy == "strict":
+            raise PsbtMergeError(
+                f"contribution omits {location} {field} ({entry.key.hex()})"
+            )
+        repairs.append(
+            FieldChange(
+                scope=scope,
+                index=index,
+                field=field,
+                key_hex=entry.key.hex(),
+                before_hex=entry.value.hex(),
+                after_hex=None,
+            )
+        )
     return PsbtMap(tuple(entries))
 
 
@@ -388,6 +402,8 @@ _FIELD_NAMES = {
         0x04: "input_count",
         0x05: "output_count",
         0x06: "tx_modifiable",
+        0x07: "sp_ecdh_share",
+        0x08: "sp_dleq",
         0xFB: "psbt_version",
         0xFC: "proprietary",
     },
@@ -395,6 +411,7 @@ _FIELD_NAMES = {
         0x00: "non_witness_utxo",
         0x01: "witness_utxo",
         0x02: "partial_signature",
+        0x03: "sighash_type",
         0x06: "bip32_derivation",
         0x0E: "previous_txid",
         0x0F: "output_index",
@@ -404,6 +421,18 @@ _FIELD_NAMES = {
         0x13: "tap_key_signature",
         0x16: "tap_bip32_derivation",
         0x17: "tap_internal_key",
+        0x1A: "musig2_participant_pubkeys",
+        0x1B: "musig2_pub_nonce",
+        0x1C: "musig2_partial_sig",
+        0x1D: "sp_ecdh_share",
+        0x1E: "sp_dleq",
+        0x1F: "sp_spend_bip32_derivation",
+        0x20: "sp_tweak",
+        # Not a BIP-375/376 field: silent-pay's MuSig2-SP treasury path keys
+        # these by the untweaked MuSig2 aggregate pubkey rather than a plain
+        # per-input scan key, so the artifacts it produces carry them here.
+        0x21: "musig2_sp_ecdh_share",
+        0x22: "musig2_sp_dleq",
         0xFC: "proprietary",
     },
     "output": {
@@ -412,6 +441,7 @@ _FIELD_NAMES = {
         0x04: "script",
         0x05: "tap_internal_key",
         0x07: "tap_bip32_derivation",
+        0x08: "musig2_participant_pubkeys",
         0x09: "sp_v0_info",
         0x0A: "sp_v0_label",
         0xFC: "proprietary",
