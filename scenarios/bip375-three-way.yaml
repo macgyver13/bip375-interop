@@ -12,5 +12,4 @@ inputs:
   - {owner: jade-b, type: p2tr, amount_sat: 110000}
   - {owner: seedsigner-c, type: p2wpkh, amount_sat: 120000}
 outputs:
-  - {type: silent-payment, recipient_id: recipient-a, amount_sat: 300000}
-  - {type: change, owner: coldcard-a, amount_sat: 29000}
+  - {type: silent-payment, recipient_id: recipient-a, amount_sat: 329000}

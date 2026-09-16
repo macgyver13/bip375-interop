@@ -30,9 +30,14 @@ All commands below assume `cd /Users/macgyver/src/bip375-interop && source .venv
 | Scenario | Suite | Backends | Status |
 |---|---|---|---|
 | `bip375-seedsigner-single` | bip375 | seedsigner | **Working** |
+| `bip375-seedsigner-single-taproot` | bip375 | seedsigner | **Working** (P2TR key-path input) |
 | `bip375-coldcard-jade-two-way` | bip375 | coldcard, jade | **Working** |
-| `bip375-seedsigner-jade-two-way` | bip375 | seedsigner, jade | Defined, not yet passing |
-| `bip375-three-way` | bip375 | coldcard, jade, seedsigner | Defined, never run |
+| `bip375-coldcard-jade-two-way-taproot` | bip375 | coldcard, jade | **Working** (both inputs P2TR) |
+| `bip375-jade-two-way` | bip375 | jade x2 | **Working** (same-backend) |
+| `bip375-coldcard-two-way` | bip375 | coldcard x2 | **Working** (same-backend) |
+| `bip375-three-way` | bip375 | coldcard, jade, seedsigner | Blocked at `seedsigner-c` (see below); `coldcard-a`/`jade-b` contribute cleanly |
+| `bip375-seedsigner-jade-two-way` | bip375 | seedsigner, jade | Blocked (SeedSigner cannot co-own a plain BIP-375 send, see below) |
+| `bip375-seedsigner-coldcard-two-way` | bip375 | seedsigner, coldcard | Blocked, same root cause, confirmed against a second backend |
 | `musig2-sp-coldcard-jade-two-way` | musig2-sp | coldcard, jade | **Working end to end** (signed, broadcast, confirmed, recipient-verified on regtest) |
 | `musig2-sp-jade-derive-first-two-way` | musig2-sp | jade x2 | **Working end to end**, verified via direct script only -- `cli.py run` doesn't build this descriptor shape yet, see below |
 | `musig2-sp-signet-treasury` | musig2-sp | bitsaga-seedsigner x3 | Blocked (BitSaga bug, see below) |
@@ -50,8 +55,21 @@ PSBT needed):
 bip375-interop run-generated scenarios/bip375-seedsigner-single.yaml
 ```
 
-Last confirmed passing: `artifacts/20260912T115321Z-bip375-seedsigner-single/` (has
-`final.psbt` + `manifest.json`).
+Last confirmed passing: `artifacts/20260916T024327Z-bip375-seedsigner-single/`. (Was
+briefly broken by a `build_bip375_fixture` bug that rejected `global` contribution mode
+outright -- see `docs/roadmap.md` Milestone 2 -- now fixed.)
+
+### `bip375-seedsigner-single-taproot` -- working
+
+Same shape as above, with a P2TR key-path input instead of P2WPKH. Confirms SeedSigner's
+software signer resolves and signs a taproot SP input correctly when it is the sole
+owner:
+
+```bash
+bip375-interop run-generated scenarios/bip375-seedsigner-single-taproot.yaml
+```
+
+Last confirmed passing: `artifacts/20260916T024327Z-bip375-seedsigner-single-taproot/`.
 
 ### `bip375-coldcard-jade-two-way` -- working
 
@@ -63,22 +81,94 @@ bip375-interop run-generated scenarios/bip375-coldcard-jade-two-way.yaml
 
 Last confirmed passing: `artifacts/20260915T174401Z-bip375-coldcard-jade-two-way/`.
 
-### `bip375-seedsigner-jade-two-way` -- defined, not yet passing
+### `bip375-coldcard-jade-two-way-taproot` -- working
+
+Same pairing, both inputs P2TR key-path instead of P2WPKH:
+
+```bash
+bip375-interop run-generated scenarios/bip375-coldcard-jade-two-way-taproot.yaml
+```
+
+Last confirmed passing:
+`artifacts/20260916T024607Z-bip375-coldcard-jade-two-way-taproot/`; `semantic_diff`
+against `00-initial.psbt` shows real `PSBT_IN_SP_ECDH_SHARE`/`PSBT_IN_SP_DLEQ`
+(`0x1d`/`0x1e`) per-input contributions from both devices plus a `tap_key_signature` on
+each input -- both firmwares implement BIP-375's real per-input multi-party protocol
+natively. First attempt failed with `conflicting input 1 type_0x3 (03)`: Jade's
+`resolve-sign` contribution rewrote its own taproot input's sighash type from
+`SIGHASH_DEFAULT` (what the fixture pre-set) to explicit `SIGHASH_ALL`. Both values are
+valid per BIP-341, but the strict-merge policy correctly flags any field mutation it
+didn't allow-list; fixed by having `build_bip375_fixture` pre-set `SIGHASH_ALL` for P2TR
+inputs too, matching what P2WPKH inputs already used and what Jade itself produces.
+
+### `bip375-jade-two-way` -- working (same-backend)
+
+Two independent Jade QEMU instances (seed_ids `test-a`/`test-b`), confirming the
+same-backend lane in addition to the coldcard/jade mixed pairing:
+
+```bash
+bip375-interop run-generated scenarios/bip375-jade-two-way.yaml
+```
+
+Last confirmed passing: `artifacts/20260916T024340Z-bip375-jade-two-way/`.
+
+### `bip375-coldcard-two-way` -- working (same-backend)
+
+Two segregated Coldcard simulator instances. `coldcard_psbt_worker.py` already keys each
+simulator's control socket by the simulator subprocess's own PID
+(`/tmp/ckcc-simulator-<pid>.sock`), so two concurrent instances don't collide:
+
+```bash
+bip375-interop run-generated scenarios/bip375-coldcard-two-way.yaml
+```
+
+Last confirmed passing: `artifacts/20260916T024410Z-bip375-coldcard-two-way/`.
+
+### `bip375-seedsigner-jade-two-way` / `bip375-seedsigner-coldcard-two-way` -- blocked
 
 ```bash
 bip375-interop run-generated scenarios/bip375-seedsigner-jade-two-way.yaml
+bip375-interop run-generated scenarios/bip375-seedsigner-coldcard-two-way.yaml
 ```
 
-Both attempts on record stopped after writing only `00-initial.psbt` -- it has never
-completed a round. Per `docs/roadmap.md`: "expand [this scenario] only after its live
-QEMU run passes." Treat as not working until someone runs it down.
+Both fail identically and immediately (before any device is even contacted, since
+`seedsigner-a` is the first signer in both scenarios):
 
-### `bip375-three-way` -- defined, never run
+```
+error: Silent Payment signing failed: input(s) 1 belong to another signer; multi-party Silent Payment sends are not supported.
+```
 
-Coldcard + Jade + SeedSigner, per-input mode, with a change output. No artifact
-directory exists for this scenario name at all -- it has apparently never actually been
-executed. Would need the same `run-generated` treatment as the two-way scenarios above;
-worth a dry run before relying on it.
+This is not a QEMU/harness defect -- it reproduces deterministically regardless of which
+other backend SeedSigner is paired with. Root cause: SeedSigner's plain BIP-375 software
+signer (`SeedSignerWorker` in `signer_worker.py`) calls upstream SeedSigner's
+`embit.silent_payments.psbt.SilentPaymentsPSBT.sign_with` for every round, which always
+resolves and signs as if it were the sole owner of every eligible input, and this
+particular embit fork has no per-input multi-party contribution primitives
+(`PSBT_IN_SP_ECDH_SHARE`/`PSBT_IN_SP_DLEQ`) implemented at all. See `docs/roadmap.md`
+Milestone 2 for the full writeup. This is a genuine upstream limitation, not something
+to fix inside this harness (which would mean reimplementing BIP-375's per-input
+ECDH-share/DLEQ scheme from scratch) -- treat as blocked pending upstream SeedSigner/
+embit multi-party send support, the same way the BitSaga `_sp_groups` bug is treated in
+Milestone 3.
+
+### `bip375-three-way` -- blocked at the SeedSigner leg
+
+Coldcard (P2WPKH) + Jade (P2TR) + SeedSigner (P2WPKH), per-input mode:
+
+```bash
+bip375-interop run-generated scenarios/bip375-three-way.yaml
+```
+
+`coldcard-a` and `jade-b` both complete their `contribute` round cleanly (real per-input
+multi-party contribution, same as the taproot two-way scenario above); the run then
+fails at `seedsigner-c`'s `resolve-sign` round with `input(s) 0, 1 belong to another
+signer`, the same SeedSigner limitation as above, just reached one round later because
+SeedSigner is the last signer here instead of the first. Last attempt:
+`artifacts/20260916T024612Z-bip375-three-way/` has both `01-contribute-coldcard-a-*` and
+`02-contribute-jade-b-*`, nothing for `seedsigner-c`. (The scenario originally could not
+even be generated: it declared a P2TR input before `build_bip375_fixture` supported one,
+and a second `change` output, which the fixture builder's single-SP-output contract
+rejects -- simplified to one SP payment sized to leave a 1,000 sat fee.)
 
 ## MuSig2-SP scenarios
 

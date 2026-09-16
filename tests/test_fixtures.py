@@ -32,3 +32,51 @@ def test_generated_fixture_is_unresolved_and_has_one_owned_input_per_signer() ->
     assert psbt.outputs[0].get(b"\x04") is None
     assert psbt.outputs[0].get(b"\x09") is not None
     assert all(item.get(b"\x03") == b"\x01\x00\x00\x00" for item in psbt.inputs)
+
+
+def test_generated_fixture_supports_p2tr_inputs() -> None:
+    pytest.importorskip("embit")
+    scenario = Scenario.from_dict({
+        "name": "taproot-two-way",
+        "suite": "bip375",
+        "network": "regtest",
+        "signers": [
+            {"name": "one", "backend": "coldcard", "seed_id": "test-a"},
+            {"name": "two", "backend": "jade", "seed_id": "test-b"},
+        ],
+        "suite_config": {"contribution_mode": "per-input"},
+        "inputs": [
+            {"owner": "one", "type": "p2wpkh", "amount_sat": 100_000},
+            {"owner": "two", "type": "p2tr", "amount_sat": 110_000},
+        ],
+        "outputs": [{"type": "silent-payment", "amount_sat": 209_000}],
+    })
+
+    psbt = parse_psbt(build_bip375_fixture(scenario))
+
+    assert len(psbt.inputs) == 2
+    # PSBT_IN_TAP_INTERNAL_KEY (0x17) is present only on the P2TR input.
+    assert psbt.inputs[0].get(b"\x17") is None
+    assert psbt.inputs[1].get(b"\x17") is not None
+    # SIGHASH_ALL on both inputs (see fixtures.py: real Jade firmware
+    # normalizes a taproot input's sighash type to explicit SIGHASH_ALL).
+    assert psbt.inputs[0].get(b"\x03") == b"\x01\x00\x00\x00"
+    assert psbt.inputs[1].get(b"\x03") == b"\x01\x00\x00\x00"
+
+
+def test_generated_fixture_supports_global_contribution_mode() -> None:
+    pytest.importorskip("embit")
+    scenario = Scenario.from_dict({
+        "name": "single-owner",
+        "suite": "bip375",
+        "network": "regtest",
+        "signers": [{"name": "one", "backend": "seedsigner", "seed_id": "test-a"}],
+        "suite_config": {"contribution_mode": "global"},
+        "inputs": [{"owner": "one", "type": "p2wpkh", "amount_sat": 100_000}],
+        "outputs": [{"type": "silent-payment", "amount_sat": 99_000}],
+    })
+
+    psbt = parse_psbt(build_bip375_fixture(scenario))
+
+    assert len(psbt.inputs) == 1
+    assert psbt.outputs[0].get(b"\x09") is not None
