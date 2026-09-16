@@ -6,12 +6,13 @@ from dataclasses import asdict, is_dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 
 class ArtifactRun:
     def __init__(self, root: Path, scenario_name: str):
-        timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-        self.path = root / f"{timestamp}-{scenario_name}"
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
+        self.path = root / f"{timestamp}-{scenario_name}-{uuid4().hex[:8]}"
         self.path.mkdir(parents=True, exist_ok=False)
         self._files: dict[str, str] = {}
 

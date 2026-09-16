@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import subprocess
 from pathlib import Path
 
 from bip375_interop.jade_worker import JadeWorker
@@ -155,3 +156,34 @@ def test_jade_worker_starts_and_stops_native_qemu(tmp_path: Path) -> None:
     assert observed["cwd"] == checkout
     worker.close()
     assert qemu.terminated
+
+
+def test_jade_worker_redirects_qemu_io_to_instance_dir(tmp_path: Path) -> None:
+    checkout = tmp_path / "jade"
+    (checkout / "build").mkdir(parents=True)
+    (checkout / "build" / "flash_image.bin").touch()
+    (checkout / "build" / "qemu_efuse.bin").touch()
+    instance_dir = tmp_path / "instance"
+    qemu = FakeQemu()
+    observed = {}
+
+    def process_factory(argv, **kwargs):
+        observed.update(kwargs)
+        return qemu
+
+    worker = JadeWorker(
+        environ={
+            "BIP375_JADE_CHECKOUT": str(checkout),
+            "BIP375_JADE_QEMU": "/tools/qemu-system-xtensa",
+            "BIP375_WORKER_INSTANCE_DIR": str(instance_dir),
+        },
+        process_factory=process_factory,
+    )
+
+    worker._start_qemu()
+
+    assert observed["stdout"] not in (subprocess.DEVNULL, None)
+    assert observed["stderr"] not in (subprocess.DEVNULL, None)
+    assert (instance_dir / "qemu.stdout.log").is_file()
+    assert (instance_dir / "qemu.stderr.log").is_file()
+    worker.close()

@@ -153,10 +153,11 @@ def test_merge_appends_only_new_records_and_preserves_base_order() -> None:
     base = fixture(input_extra=[(b"\xfcbase", b"base")])
     contribution = fixture(
         globals_extra=[(b"\xfcglobal", b"global")],
-        input_extra=[(b"\xfcnew-a", b"a"), (b"\xfcnew-b", b"b")],
+        input_extra=[(b"\xfcbase", b"base"), (b"\xfcnew-a", b"a"), (b"\xfcnew-b", b"b")],
         output_extra=[(b"\xfcout", b"out")],
     )
-    merged = parse_psbt(merge_psbts(base, contribution))
+    merged_bytes, repairs = merge_psbts(base, contribution)
+    merged = parse_psbt(merged_bytes)
     assert [entry.key for entry in merged.inputs[0].entries[-3:]] == [
         b"\xfcbase",
         b"\xfcnew-a",
@@ -164,13 +165,15 @@ def test_merge_appends_only_new_records_and_preserves_base_order() -> None:
     ]
     assert merged.globals.get(b"\xfcglobal") == b"global"
     assert merged.outputs[0].get(b"\xfcout") == b"out"
+    assert not repairs
 
 
 def test_merge_is_idempotent() -> None:
     base = fixture()
     contribution = fixture(input_extra=[(b"\xfcshare", b"share")])
-    once = merge_psbts(base, contribution)
-    assert merge_psbts(once, contribution) == once
+    once, _ = merge_psbts(base, contribution)
+    again, _ = merge_psbts(once, contribution)
+    assert again == once
 
 
 def test_merge_allows_bip375_output_resolution_and_flag_clearing() -> None:
@@ -183,12 +186,19 @@ def test_merge_allows_bip375_output_resolution_and_flag_clearing() -> None:
         globals_extra=[(b"\x06", b"\x00")],
         output_extra=[(b"\x04", bytes.fromhex("225120") + b"\x44" * 32)],
     )
-    merged = parse_psbt(merge_psbts(base, contribution))
+    merged_bytes, repairs = merge_psbts(base, contribution)
+    merged = parse_psbt(merged_bytes)
     assert merged.globals.get(b"\x06") == b"\x00"
     assert merged.outputs[0].get(b"\x04") is not None
+    assert not repairs
 
 
-def test_merge_treats_omitted_tx_modifiable_as_zero_during_bip375_resolution() -> None:
+@pytest.mark.parametrize("merge_policy", ["strict", "combiner"])
+def test_merge_omitted_tx_modifiable_during_bip375_resolution(merge_policy: str) -> None:
+    # A real device (Jade) has been observed omitting tx_modifiable entirely
+    # instead of writing it back with cleared flags when it resolves a
+    # silent payment output. That is a dropped record, not a harmless
+    # omission, so it must not be papered over silently.
     base = fixture(
         unresolved_sp=True,
         globals_extra=[(b"\x06", b"\x03")],
@@ -197,10 +207,15 @@ def test_merge_treats_omitted_tx_modifiable_as_zero_during_bip375_resolution() -
         unresolved_sp=True,
         output_extra=[(b"\x04", bytes.fromhex("225120") + b"\x44" * 32)],
     )
-
-    merged = parse_psbt(merge_psbts(base, contribution))
-    assert merged.globals.get(b"\x06") is None
+    if merge_policy == "strict":
+        with pytest.raises(PsbtMergeError, match="tx_modifiable"):
+            merge_psbts(base, contribution, merge_policy)
+        return
+    merged_bytes, repairs = merge_psbts(base, contribution, merge_policy)
+    merged = parse_psbt(merged_bytes)
+    assert merged.globals.get(b"\x06") == b"\x03"
     assert merged.outputs[0].get(b"\x04") is not None
+    assert [(repair.scope, repair.field) for repair in repairs] == [("global", "tx_modifiable")]
 
 
 def test_merge_rejects_enabling_modifiable_flags() -> None:
@@ -210,9 +225,19 @@ def test_merge_rejects_enabling_modifiable_flags() -> None:
         merge_psbts(base, contribution)
 
 
-def test_merge_allows_contribution_to_omit_non_transaction_records() -> None:
+@pytest.mark.parametrize("merge_policy", ["strict", "combiner"])
+def test_merge_non_transaction_record_omission(merge_policy: str) -> None:
     base = fixture(input_extra=[(b"\xfckept", b"value")])
-    assert parse_psbt(merge_psbts(base, fixture())).inputs[0].get(b"\xfckept") == b"value"
+    contribution = fixture()
+    if merge_policy == "strict":
+        with pytest.raises(PsbtMergeError, match="omits input 0 proprietary"):
+            merge_psbts(base, contribution, merge_policy)
+        return
+    merged_bytes, repairs = merge_psbts(base, contribution, merge_policy)
+    assert parse_psbt(merged_bytes).inputs[0].get(b"\xfckept") == b"value"
+    assert [(repair.scope, repair.index, repair.field) for repair in repairs] == [
+        ("input", 0, "proprietary")
+    ]
 
 
 def test_merge_rejects_conflicting_existing_record() -> None:

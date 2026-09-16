@@ -47,11 +47,12 @@ def run_jade_smoke(config: HarnessConfig) -> tuple[Path, Path, int]:
     worker = WorkerClient(plan.argv, cwd=plan.cwd, env=plan.env)
     try:
         worker.start("bip375", "jade-single", artifacts.path / "jade-a", network)
-        final = run_rounds(initial, (Round("resolve-sign", ("jade-a",)),), {"jade-a": worker}, artifacts)
+        final, repairs = run_rounds(initial, (Round("resolve-sign", ("jade-a",)),), {"jade-a": worker}, artifacts)
         manifest = artifacts.finalize({
             "scope": "single-device Jade QEMU BIP-375 transport",
             "mixed_device_psbt_interoperability": "not exercised",
             "checkouts": [asdict(state)],
+            "repairs": list(repairs),
         })
         return artifacts.path / "final.psbt", manifest, len(final)
     finally:
@@ -85,7 +86,7 @@ def run_coldcard_smoke(config: HarnessConfig) -> tuple[Path, Path, int]:
     worker = WorkerClient(plan.argv, cwd=plan.cwd, env=plan.env)
     try:
         worker.start("bip375", "test-a", artifacts.path / "coldcard-a", "regtest")
-        final = run_rounds(
+        final, repairs = run_rounds(
             initial,
             (Round("resolve-sign", ("coldcard-a",)),),
             {"coldcard-a": worker},
@@ -95,6 +96,7 @@ def run_coldcard_smoke(config: HarnessConfig) -> tuple[Path, Path, int]:
             "scope": "single-device Coldcard simulator BIP-375 transport",
             "mixed_device_psbt_interoperability": "not exercised",
             "checkouts": [asdict(state)],
+            "repairs": list(repairs),
         })
         return artifacts.path / "final.psbt", manifest, len(final)
     finally:
