@@ -10,9 +10,80 @@
 
 ## Milestone 2: external fixture adapters
 
-- [ ] Generate one-, two-, and three-owner plain BIP-375 PSBTv2 scenarios.
-  The first deterministic P2WPKH-only SeedSigner/Jade two-owner scenario is available;
-  expand it only after its live QEMU run passes.
+- [x] Generate one-, two-, and three-owner plain BIP-375 PSBTv2 scenarios.
+  The first deterministic P2WPKH-only SeedSigner/Jade two-owner scenario's live QEMU run
+  was run down: it fails deterministically (see the SeedSigner multi-party finding
+  below), not from a QEMU/harness defect, so it is a real, documented blocker rather
+  than something to keep retrying. Two real bugs surfaced and were fixed while
+  expanding scope:
+  - `build_bip375_fixture` (`fixtures.py`) rejected any `contribution_mode` other than
+    `per-input`, which silently broke the *already-shipped* one-owner
+    `bip375-seedsigner-single` scenario (it uses `global` mode) even though
+    `scenario_rounds` has always supported the global/single-owner shape. Fixed by
+    dropping the redundant check -- fixture shape does not depend on contribution mode,
+    only round scheduling does, and that is already validated in `suites.py`.
+  - `build_bip375_fixture` supported P2WPKH inputs only, which blocked evaluating
+    taproot inputs at all and made the existing `bip375-three-way.yaml` (which
+    declared a P2TR input for `jade-b`) impossible to generate. Added P2TR key-path
+    input support (BIP86 test path, `taproot_internal_key` / `taproot_bip32_derivations`
+    populated the way `embit`'s own SP signing code expects).
+  - One-owner: `bip375-seedsigner-single` (P2WPKH) and the new
+    `bip375-seedsigner-single-taproot` (P2TR) both pass end to end, confirming
+    SeedSigner's software signer resolves and signs a taproot key-path SP input
+    correctly when it is the sole owner.
+  - Two-owner, same backend: new `bip375-jade-two-way` (two independent Jade QEMU
+    instances) and `bip375-coldcard-two-way` (two segregated Coldcard simulator
+    instances, distinguished by PID-keyed socket paths) both pass end to end.
+  - Two-owner, pairwise mixed: `bip375-coldcard-jade-two-way` (P2WPKH) continues to
+    pass; the new `bip375-coldcard-jade-two-way-taproot` (both inputs P2TR) also passes
+    after a real interop fix (below). Any pairing involving `seedsigner` is blocked --
+    see the finding below; `bip375-seedsigner-coldcard-two-way` was added and run to
+    confirm the identical failure against a second backend, not just Jade.
+  - Three-way: `bip375-three-way` (coldcard P2WPKH, jade P2TR, seedsigner P2WPKH) now
+    generates and runs; `coldcard-a` and `jade-b` both complete their `contribute`
+    round cleanly, and the run fails at `seedsigner-c`'s `resolve-sign` round for the
+    same reason as the two-owner case. The scenario previously could not even be
+    generated (see the two fixture bugs above: it needs P2TR input support, and its
+    original `change` output violated `build_bip375_fixture`'s single-SP-output
+    contract, so the output was simplified to one SP payment sized to leave a 1,000 sat
+    fee against all three inputs).
+  - **Real interop bug found evaluating taproot inputs**: the first
+    `bip375-coldcard-jade-two-way-taproot` attempt failed merging with `conflicting
+    input 1 type_0x3 (03)` -- `jade-b`'s `resolve-sign` contribution rewrote its own
+    taproot input's `PSBT_IN_SIGHASH_TYPE` from `SIGHASH_DEFAULT` (`0x00000000`, what
+    the fixture pre-set) to explicit `SIGHASH_ALL` (`0x01000000`). Both values are
+    permitted by BIP-341/embit's own `sign_with` check and are functionally equivalent
+    for a taproot key-path spend, but the harness's strict-merge policy correctly
+    treats any field mutation it did not explicitly allow-list as suspect, per this
+    milestone's own "reject transaction-intent mutation" goal. Rather than loosen the
+    merge policy, `build_bip375_fixture` now pre-sets `SIGHASH_ALL` for P2TR inputs too
+    (matching what P2WPKH inputs already used, and what Jade's firmware itself
+    produces), so no signer needs to touch the field at all.
+  - **SeedSigner cannot participate in any multi-owner plain BIP-375 scenario**,
+    confirmed as the root cause of the original two-way scenario's failure and
+    reproduced identically whether SeedSigner is first, last, same-backend-paired
+    (moot -- would need a second SeedSigner worker, which hits the same bug), or paired
+    with a different backend (Coldcard). `SeedSignerWorker.process`
+    (`signer_worker.py`) calls upstream SeedSigner's `embit.silent_payments.psbt.
+    SilentPaymentsPSBT.sign_with` unconditionally for every round; `sign_with` always
+    calls `derive_sp_outputs`, whose own docstring says it is a "BIP-375 single-signer
+    Silent Payment send: this signer controls every eligible input and acts as its own
+    output generator." It unconditionally clears any existing
+    `PSBT_GLOBAL_SP_ECDH_SHARE`/`PSBT_GLOBAL_SP_DLEQ` contributions and recomputes them
+    from only the private keys it derives locally; if any eligible input belongs to a
+    different signer it raises `SPValidationError("input(s) ... belong to another
+    signer; multi-party Silent Payment sends are not supported.")`. This embit fork
+    also has no per-input `PSBT_IN_SP_ECDH_SHARE`/`PSBT_IN_SP_DLEQ` (BIP-375's actual
+    multi-party contribution fields) implementation at all -- `psbt.py` only ever
+    strips those keys as unknown, with a `# FUTURE` comment. Coldcard and Jade do not
+    hit this because their real firmware implements BIP-375's per-input multi-party
+    protocol natively; `SeedSignerWorker` is a thin wrapper around software that does
+    not. This is a genuine upstream limitation (embit/SeedSigner), not a harness bug --
+    consistent with how the BitSaga `_sp_groups` bug in Milestone 3 was handled, it is
+    documented here rather than worked around by reimplementing BIP-375's per-input
+    ECDH-share/DLEQ scheme inside this harness. `bip375-seedsigner-jade-two-way` and
+    the SeedSigner leg of `bip375-three-way` stay blocked until upstream SeedSigner (or
+    its embit dependency) adds real multi-party BIP-375 send support.
 - [x] Keep each virtual signer in an isolated worker process and strictly merge PSBT maps.
 - [x] Permit only BIP-375-authorized output-script resolution and modifiable-flag clearing.
 - [x] Run an unresolved PSBT through the actual upstream SeedSigner BIP-375 runtime.
@@ -20,7 +91,10 @@
 - [x] Add arbitrary-PSBT transports for Coldcard and Jade.
   Jade has a persistent QEMU worker with dynamic host-port allocation. Coldcard has a
   persistent headless segregated simulator worker and a reproducible one-owner external-fixture smoke lane.
-- Exercise same-backend, pairwise mixed, and Coldcard/Jade/SeedSigner three-way runs.
+- [x] Exercise same-backend, pairwise mixed, and Coldcard/Jade/SeedSigner three-way runs.
+  See the scenario-by-scenario results above; every combination not involving
+  SeedSigner as a co-owner passes, and the SeedSigner blocker is documented rather
+  than silently left unexercised.
 - Reject conflicts, transaction-intent mutation, premature signatures, invalid proofs,
   and incomplete ECDH coverage.
 
