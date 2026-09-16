@@ -95,6 +95,74 @@
   See the scenario-by-scenario results above; every combination not involving
   SeedSigner as a co-owner passes, and the SeedSigner blocker is documented rather
   than silently left unexercised.
+- [x] Add BIP-376 (spending Silent Payment outputs with PSBTs) input support to
+  generated fixtures, and prove sending a previously-received SP UTXO onward to a
+  plain P2WPKH/P2TR address or into a new Silent Payment, on Coldcard and Jade.
+  BIP-376 (`PSBT_IN_SP_TWEAK` 0x20, `PSBT_IN_SP_SPEND_BIP32_DERIVATION` 0x1f) is the
+  spend-side counterpart to BIP-375's send side: an input whose UTXO is itself a
+  Silent Payment, signable from the base spend key plus a per-input tweak instead of
+  ordinary BIP-341 taproot derivation. `build_bip375_fixture` (`fixtures.py`) gained a
+  new `sp-spend` input type (`spend_key.sp_spend_tweak(tweak)` builds the tweaked
+  output key directly -- no `script.p2tr()`, since BIP-352 outputs are not
+  additionally BIP-341-tweaked) and now accepts `p2wpkh`/`p2tr` output types
+  alongside the existing `silent-payment` one, so a scenario can spend an SP-received
+  UTXO onward to a plain address, not only into another Silent Payment.
+  New scenarios: `bip376-coldcard-sp-spend-single`,
+  `bip376-jade-two-way-sp-spend-to-{p2wpkh,p2tr,sp}`,
+  `bip376-coldcard-jade-sp-spend-to-{p2wpkh,p2tr,sp}`,
+  `bip376-seedsigner-sp-spend-single`,
+  `bip376-seedsigner-jade-sp-spend-to-{p2wpkh,p2tr}`,
+  `bip376-seedsigner-coldcard-sp-spend-to-p2wpkh` -- every combination (single
+  Coldcard, two independent Jades, mixed Coldcard+Jade, and SeedSigner as a co-owner
+  with either device) x every destination type works end to end, confirmed via real
+  `PSBT_IN_TAP_KEY_SIG` signatures added by the actual simulator/QEMU firmware, not
+  just a non-error exit code.
+  - **Real Coldcard/Jade derivation-path requirement found**: BIP-376 spend keys use
+    one fixed key per account (`352h/coin_type'/account'/0h/0`), not a key varied per
+    UTXO the way a receive path is -- confirmed identical in both Coldcard's
+    `validate_silent_payment_inputs` (`shared/silentpayments.py`) and Jade's
+    `wallet_is_expected_sp_spend_path` (`wallet.c`). Uniqueness across payments to the
+    same spend key comes from each input's own `sp_tweak`, not from deriving a
+    different base key per input. The fixture's first attempt varied the path per
+    input index and was correctly rejected by real Coldcard firmware
+    (`"SP spend path key type must be 0h"`); fixed to use the one fixed path per
+    signer that both devices require.
+  - **Real harness round-scheduling bug found and fixed, not a device bug**: mixed
+    Coldcard+Jade sp-spend scenarios with a plain P2WPKH/P2TR output initially failed
+    with Coldcard rejecting `"Transaction looks completely signed already?"` on what
+    looked like the first, unsigned round. Root cause was in this harness's
+    `suites.py`, not Coldcard: `scenario_rounds()`'s per-input schedule
+    (`contribute` -> `resolve-sign` -> `sign`) exists so every owner's ECDH share can
+    be collected before a Silent Payment *output* is resolved; a plain-output
+    spend-only scenario has no such output to resolve, so both owners were already
+    fully signed after only the first two rounds, and the third, redundant round
+    handed a signer an already-complete PSBT. Jade silently tolerated being asked to
+    re-sign it (a no-op); Coldcard correctly rejected it, which is what actually
+    surfaced the bug -- confirmed by reproducing the identical failure with two
+    independent Coldcard instances and no Jade involved at all, and by confirming
+    both inputs already carried real signatures after round two. Fixed by having
+    `scenario_rounds` check whether any scenario output is `type: silent-payment` and
+    scheduling a single round for all signers when none is; every existing scenario
+    already has such an output, so this only changes behavior for the new
+    spend-only case.
+  - **SeedSigner's Milestone 2 multi-owner blocker turned out to be narrower than
+    documented above: it is specifically about constructing a new Silent Payment
+    *output*, not about BIP-376 *spend* inputs.** Upstream SeedSigner's embit
+    dependency's `sign_with()` only calls the single-signer-only `derive_sp_outputs()`
+    `if self.has_sp_outputs` (i.e. the PSBT has an unresolved SP output); it separately
+    and unconditionally calls `_sign_sp_spends()`, which resolves `sp_tweak` inputs
+    generically via `resolve_input_privkey`/`match_sp_spend_base`
+    (`embit/silent_payments/signing.py`) regardless of how many other inputs are
+    present or who owns them. Verified directly:
+    `bip376-seedsigner-jade-sp-spend-to-p2wpkh`, `-to-p2tr`, and
+    `bip376-seedsigner-coldcard-sp-spend-to-p2wpkh` all produce real
+    `PSBT_IN_TAP_KEY_SIG` signatures on every input with SeedSigner as a genuine
+    co-owner alongside Jade/Coldcard. `bip376-seedsigner-jade-sp-spend-to-sp` (same
+    signers, output changed to a new Silent Payment) fails with the identical
+    `SPValidationError("input(s) ... belong to another signer...")` as
+    `bip375-seedsigner-jade-two-way`, confirming the boundary precisely: SeedSigner
+    can co-own BIP-376 spend-input scenarios, just not ones that also construct a new
+    SP output collaboratively.
 - Reject conflicts, transaction-intent mutation, premature signatures, invalid proofs,
   and incomplete ECDH coverage.
 

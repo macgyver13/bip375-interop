@@ -64,6 +64,54 @@ def test_generated_fixture_supports_p2tr_inputs() -> None:
     assert psbt.inputs[1].get(b"\x03") == b"\x01\x00\x00\x00"
 
 
+def test_generated_fixture_supports_sp_spend_bip376_inputs() -> None:
+    pytest.importorskip("embit")
+    scenario = Scenario.from_dict({
+        "name": "sp-spend-two-way",
+        "suite": "bip375",
+        "network": "regtest",
+        "signers": [
+            {"name": "one", "backend": "coldcard", "seed_id": "test-a"},
+            {"name": "two", "backend": "jade", "seed_id": "test-b"},
+        ],
+        "suite_config": {"contribution_mode": "per-input"},
+        "inputs": [
+            {"owner": "one", "type": "sp-spend", "amount_sat": 100_000},
+            {"owner": "two", "type": "sp-spend", "amount_sat": 110_000},
+        ],
+        "outputs": [{"type": "p2wpkh", "amount_sat": 209_000}],
+    })
+
+    psbt = parse_psbt(build_bip375_fixture(scenario))
+
+    assert len(psbt.inputs) == 2
+    for inp in psbt.inputs:
+        key_types = {entry.key_type for entry in inp.entries}
+        assert 0x20 in key_types  # PSBT_IN_SP_TWEAK (BIP-376)
+        assert 0x1F in key_types  # PSBT_IN_SP_SPEND_BIP32_DERIVATION (BIP-376)
+    # Plain P2WPKH output: resolved script, no Silent Payment output info.
+    assert psbt.outputs[0].get(b"\x04") is not None
+    assert psbt.outputs[0].get(b"\x09") is None
+
+
+def test_generated_fixture_supports_p2tr_output() -> None:
+    pytest.importorskip("embit")
+    scenario = Scenario.from_dict({
+        "name": "sp-spend-to-taproot",
+        "suite": "bip375",
+        "network": "regtest",
+        "signers": [{"name": "one", "backend": "coldcard", "seed_id": "test-a"}],
+        "suite_config": {"contribution_mode": "global"},
+        "inputs": [{"owner": "one", "type": "sp-spend", "amount_sat": 100_000}],
+        "outputs": [{"type": "p2tr", "amount_sat": 99_000}],
+    })
+
+    psbt = parse_psbt(build_bip375_fixture(scenario))
+
+    assert psbt.outputs[0].get(b"\x04") is not None
+    assert psbt.outputs[0].get(b"\x09") is None
+
+
 def test_generated_fixture_supports_global_contribution_mode() -> None:
     pytest.importorskip("embit")
     scenario = Scenario.from_dict({
