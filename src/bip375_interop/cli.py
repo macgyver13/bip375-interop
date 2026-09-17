@@ -12,10 +12,13 @@ from . import __version__
 from .checkouts import inspect_checkout
 from .config import LOCK_NAME, load_config, load_scenario, write_lock
 from .errors import InteropError
+from .models import KNOWN_VALIDATORS
 from .suites import KeyArchitecture
 from .suites import get_suite
 from .suites import scenario_rounds
-from .adapters import BitSagaAdapter, ColdcardAdapter, JadeAdapter, SeedSignerAdapter
+from .adapters import (
+    BitSagaAdapter, CaravanAdapter, ColdcardAdapter, JadeAdapter, SeedSignerAdapter, SpdkAdapter,
+)
 from .artifacts import ArtifactRun
 from .batch import BatchRun, CaseResult
 from .catalog import changed_files, discover, select
@@ -98,8 +101,12 @@ def _parser() -> argparse.ArgumentParser:
     _add_signer_order_args(generated)
     check = sub.add_parser("check", help="run a project regression group and write a report")
     check.add_argument("--project", default="harness", choices=(
-        "harness", "coldcard", "jade", "seedsigner", "bitsaga-seedsigner",
+        "harness", "coldcard", "jade", "seedsigner", "bitsaga-seedsigner", "caravan", "spdk",
     ))
+    check.add_argument(
+        "--exhaustive", action="store_true",
+        help="also run every independent validator (e.g. caravan, spdk) on each bip375 scenario",
+    )
     check.add_argument("--scenarios-dir", type=Path, default=Path("scenarios"))
     check.add_argument("--since", default="HEAD", help="Git revision used to inspect local changes")
     check.add_argument(
@@ -155,6 +162,28 @@ def _start_workers(config, scenario, run_artifacts, descriptor: str | None = Non
     return workers, states
 
 
+_VALIDATOR_ADAPTERS = {
+    "caravan": CaravanAdapter,
+    "spdk": SpdkAdapter,
+}
+
+
+def _run_validators(config, scenario, run_artifacts) -> list[dict]:
+    """Re-check each run's PSBT snapshots with every opted-in validator."""
+
+    records = []
+    for name in scenario.validators:
+        checkout = config.checkouts.get(name)
+        if checkout is None:
+            raise InteropError(f"missing checkout configuration for {name}")
+        state = inspect_checkout(checkout, config.allow_dirty)
+        adapter_cls = _VALIDATOR_ADAPTERS[name]
+        snapshots = sorted(run_artifacts.path.glob(adapter_cls.snapshot_glob))
+        results = adapter_cls(checkout.path).validate(snapshots)
+        records.append({"name": name, "checkout": asdict(state), "validated": len(results)})
+    return records
+
+
 def _run_generated_scenario(config, scenario, signer_order: tuple[str, ...] | None = None) -> tuple[Path, Path, int]:
     """Run one generated BIP-375 scenario with durable evidence on failure."""
 
@@ -170,6 +199,7 @@ def _run_generated_scenario(config, scenario, signer_order: tuple[str, ...] | No
             initial_psbt, rounds, workers, run_artifacts, scenario.merge_policy, scenario=scenario,
         )
         verify_bip375_completion(scenario, final_psbt)
+        validators = _run_validators(config, scenario, run_artifacts)
         manifest = run_artifacts.finalize({
             "scenario": scenario.name,
             "suite": scenario.suite,
@@ -179,6 +209,7 @@ def _run_generated_scenario(config, scenario, signer_order: tuple[str, ...] | No
             "checkouts": [asdict(state) for state in states],
             "merge_policy": scenario.merge_policy,
             "repairs": list(repairs),
+            "validators": validators,
         })
         return run_artifacts.path / "final.psbt", manifest, len(final_psbt)
     except Exception as exc:
@@ -226,6 +257,7 @@ def _run_psbt_scenario(
         )
         if scenario.suite == "bip375":
             verify_bip375_completion(scenario, final_psbt)
+        validators = _run_validators(config, scenario, run_artifacts)
         manifest = run_artifacts.finalize({
             "scenario": scenario.name,
             "suite": scenario.suite,
@@ -237,6 +269,7 @@ def _run_psbt_scenario(
             "checkouts": [asdict(state) for state in states],
             "merge_policy": scenario.merge_policy,
             "repairs": list(repairs),
+            "validators": validators,
         })
         return run_artifacts.path / "final.psbt", manifest, len(final_psbt)
     except Exception as exc:
@@ -314,6 +347,12 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.command == "check":
             entries = select(discover(args.scenarios_dir), args.project)
+            if args.exhaustive:
+                entries = tuple(
+                    replace(entry, scenario=replace(entry.scenario, validators=KNOWN_VALIDATORS))
+                    if entry.scenario.suite == "bip375" else entry
+                    for entry in entries
+                )
             bindings = _psbt_bindings(args.psbt)
             selected_names = {entry.scenario.name for entry in entries}
             unknown = sorted(bindings.keys() - selected_names)
@@ -339,6 +378,7 @@ def main(argv: list[str] | None = None) -> int:
                         {
                             "scenario": entry.scenario.name,
                             "path": str(entry.path),
+                            "validators": list(entry.scenario.validators),
                             "status": (
                                 "selected" if entry.runnable_generated or entry.scenario.name in bindings
                                 else "blocked"

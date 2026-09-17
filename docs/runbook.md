@@ -9,7 +9,11 @@ its current status as of the most recent artifact evidence in `artifacts/`. Comp
 - Python venv at `.venv` with this package installed (`pip install -e .`).
 - `interop.yaml` checkouts must exist locally and point at real source trees (see
   `interop.yaml` at repo root for current paths: `silent-pay`, `bip375-test-generator`,
-  `coldcard` (coldcard-firmware), `jade` (Jade), `seedsigner`, `bitsaga-seedsigner`).
+  `coldcard` (coldcard-firmware), `jade` (Jade), `seedsigner`, `bitsaga-seedsigner`,
+  `caravan`, `spdk`).
+- Validators (`caravan`, `spdk`) never sign and never join a round; see "Validators
+  (caravan, spdk)" below for what each needs built before a scenario that opts into it
+  (or `check --exhaustive`) can pass.
 - `qemu-system-xtensa` on `PATH`, or under `~/.espressif/tools/qemu-xtensa/*/qemu/bin/`
   (auto-discovered) -- required for any Jade scenario.
 - Coldcard's own venv at `<coldcard checkout>/ENV/bin/python` -- required for any
@@ -38,6 +42,8 @@ All commands below assume `cd /Users/macgyver/src/bip375-interop && source .venv
 | `bip375-three-way` | bip375 | coldcard, jade, seedsigner | Blocked at `seedsigner-c` (see below); `coldcard-a`/`jade-b` contribute cleanly |
 | `bip375-coldcard-jade-two-way-taproot-sighash-default` | bip375 | coldcard, jade | **Finding, not working** -- neither device rejects a non-ALL sighash with an SP output present (see below) |
 | `bip375-coldcard-jade-two-way-redundant-sign` | bip375 | coldcard, jade | **Finding, not working** -- Coldcard rejects a second `sign` pass, Jade accepts it (see below) |
+| `bip375-caravan-coldcard-jade-two-way` | bip375 | coldcard, jade | **Working** (also validated by the `caravan` validator, see below) |
+| `bip375-spdk-coldcard-jade-two-way` | bip375 | coldcard, jade | **Working** (also validated by the `spdk` validator, see below) |
 | `bip375-seedsigner-jade-two-way` | bip375 | seedsigner, jade | Blocked (SeedSigner cannot co-own a plain BIP-375 send, see below) |
 | `bip375-seedsigner-coldcard-two-way` | bip375 | seedsigner, coldcard | Blocked, same root cause, confirmed against a second backend |
 | `bip376-coldcard-sp-spend-single` | bip375 (BIP-376) | coldcard | **Working** (spends its own previously-received SP UTXO) |
@@ -238,6 +244,71 @@ error -- Jade accepts and re-returns an already-complete PSBT rather than reject
 Both behaviors are spec-legal (BIP-375 does not mandate rejecting a redundant sign
 request); recorded here as a device-behavior finding, not something the harness works
 around.
+
+## Validators (caravan, spdk)
+
+Independent implementations that never sign and never join a round -- they re-check a
+run's own PSBT snapshots after the real signers are done. A scenario opts in with
+`validators: [caravan]` / `validators: [spdk]` (or both); `check --exhaustive` forces
+every `bip375`-suite scenario to run with all of `KNOWN_VALIDATORS`
+(`src/bip375_interop/models.py`) regardless of what it declares. Currently opt-in only,
+via the two dedicated scenarios below -- no existing scenario runs both.
+
+### `bip375-caravan-coldcard-jade-two-way` -- working
+
+Caravan's own TypeScript `PsbtV2` re-parses **every** PSBT snapshot the run wrote
+(`CaravanAdapter.snapshot_glob = "*.psbt"`): its constructor rejects malformed silent
+payment fields, bad DLEQ proofs, and output scripts that don't match its own BIP-352
+derivation. Structural/cryptographic-share checking only -- it has no signer, so it
+cannot verify a taproot/ECDSA signature.
+
+```bash
+bip375-interop run-generated scenarios/bip375-caravan-coldcard-jade-two-way.yaml
+```
+
+Needs the checkout built first (`npm ci && npx turbo build --filter=@caravan/psbt...`
+in `<caravan checkout>`). Last confirmed passing:
+`artifacts/20260917T021302.450963Z-bip375-caravan-coldcard-jade-two-way-2e50a3f0/` --
+`validated: 8` (every snapshot the round dance wrote: `00-initial.psbt` through
+`final.psbt`).
+
+### `bip375-spdk-coldcard-jade-two-way` -- working
+
+spdk-cli (`spdk-cli/` at this repo's root -- see below) runs rust-psbt's own
+`Finalizer`, then `interpreter_check` (the actual Schnorr/ECDSA signature
+verification step -- `finalize()` alone only *assembles* the witness from whatever
+signature bytes are present, it doesn't check them), then `Extractor`. No embit
+anywhere in this path, so a bug shared between fixture generation and verification
+(both of which do use embit) can't hide from it. Requires a fully signed PSBT, so
+unlike Caravan it only validates `final.psbt` (`SpdkAdapter.snapshot_glob =
+"final.psbt"`), not every intermediate snapshot.
+
+```bash
+bip375-interop run-generated scenarios/bip375-spdk-coldcard-jade-two-way.yaml
+```
+
+Needs `spdk-cli/` built first: `cd spdk-cli && cargo build --release`. Its `Cargo.toml`
+depends on spdk's `psbt` crate by git URL pinned to a `rev` (the same commit silent-pay
+depends on), and the committed `Cargo.lock` fixes everything else, so the build needs no
+local checkout. To test an uncommitted spdk change, override the dependency for one build:
+`cargo build --release --config 'patch."https://github.com/macgyver13/spdk.git".psbt.path="<spdk checkout>/psbt"'`.
+Moving the pin means bumping `rev` in `spdk-cli/Cargo.toml` and the `spdk` lock entry
+together. The `spdk`
+`interop.yaml` checkout entry itself is only used for dirty-checkout tracking and to
+confirm it's really the spdk repo (`psbt/Cargo.toml` marker); the binary is built and run
+from this repo's own `spdk-cli/`, not from that checkout -- same split as
+`caravan_validate.cjs` (in-repo script) vs. Caravan's own checkout. Last confirmed
+passing: `artifacts/20260917T031027.444777Z-bip375-spdk-coldcard-jade-two-way-70dc8619/` --
+`validated: 1` (just `final.psbt`).
+
+**Gotcha found while building this**: an input that already carries
+`PSBT_IN_FINAL_SCRIPTWITNESS` (key `0x08`) -- SeedSigner's embit fork sets this directly
+at signing time, real Coldcard/Jade output never does -- is treated by `finalize()` as
+already finalized and passed through unchanged, rather than rebuilt from the raw
+`tap_key_sig`/`partial_sig` field. Doesn't weaken the check (`interpreter_check` still
+verifies whatever ends up in the witness either way), but it means hand-tampering a
+SeedSigner-signed PSBT for a negative test has to corrupt *both* fields, not just the
+raw signature record, or `finalize()` silently uses the untouched pre-built witness.
 
 ## BIP-376 (Silent Payment spend) scenarios
 
