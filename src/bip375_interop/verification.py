@@ -28,6 +28,29 @@ _MUSIG2_PUB_NONCE = 0x1B
 _MUSIG2_PARTIAL_SIG = 0x1C
 
 
+_INPUTS_MODIFIABLE = 0x01
+_OUTPUTS_MODIFIABLE = 0x02
+
+
+def _check_tx_modifiable(parsed: PsbtV2) -> None:
+    """After resolution, inputs/outputs modifiable must be clear or absent.
+
+    Both bits are legal to clear earlier (e.g. Coldcard clears them during
+    MuSig2 round 1) or to leave set until later (Coldcard leaves them set
+    through a plain BIP-375 ``contribute`` step) -- only their state in the
+    final PSBT is a completion requirement.
+    """
+
+    value = parsed.globals.get(b"\x06")
+    if value is None:
+        return
+    flags = value[0]
+    if flags & _INPUTS_MODIFIABLE:
+        raise VerificationError("final PSBT still has inputs-modifiable set")
+    if flags & _OUTPUTS_MODIFIABLE:
+        raise VerificationError("final PSBT still has outputs-modifiable set")
+
+
 def _signer_roots(scenario: Scenario) -> list:
     from embit import bip32, bip39
 
@@ -189,11 +212,16 @@ def _verify_input_signature(roots: list, embit_psbt, parsed: PsbtV2, index: int)
     if entry is None:
         raise VerificationError(f"input {index} is missing a taproot key signature")
     sig = entry.value
+    # BIP-341: a 64-byte signature carries no explicit sighash byte, meaning
+    # SIGHASH_DEFAULT was used; a 65-byte signature's trailing byte names the
+    # sighash explicitly. DEFAULT and ALL are functionally identical for
+    # taproot, so either is a genuine signature over the owner's output key.
     if len(sig) == 65:
-        if sig[64] != 1:
-            raise VerificationError(f"input {index} taproot signature has an unexpected sighash byte")
+        sighash = sig[64]
         sig = sig[:64]
-    elif len(sig) != 64:
+    elif len(sig) == 64:
+        sighash = 0
+    else:
         raise VerificationError(f"input {index} taproot signature has an invalid length")
 
     utxo = inp.utxo
@@ -201,7 +229,7 @@ def _verify_input_signature(roots: list, embit_psbt, parsed: PsbtV2, index: int)
         raise VerificationError(f"input {index} is missing UTXO information")
     output_xonly = utxo.script_pubkey.data[2:34]
     pubkey = ec.PublicKey.parse(b"\x02" + output_xonly)
-    msg_hash = embit_psbt.sighash(index, sighash=1)
+    msg_hash = embit_psbt.sighash(index, sighash=sighash)
     if not pubkey.schnorr_verify(ec.SchnorrSig(sig), msg_hash):
         raise VerificationError(
             f"input {index} taproot signature does not verify against the owner's output key"
@@ -227,6 +255,7 @@ def _verify_bip375_structural(scenario: Scenario, psbt: bytes) -> None:
         if required not in key_types:
             name = "taproot key signature" if required == _TAP_KEY_SIGNATURE else "partial signature"
             raise VerificationError(f"input {index} is missing a {name}")
+    _check_tx_modifiable(parsed)
 
 
 def verify_bip375_completion(scenario: Scenario, psbt: bytes) -> None:
@@ -273,6 +302,8 @@ def verify_bip375_completion(scenario: Scenario, psbt: bytes) -> None:
     for index in range(len(parsed.inputs)):
         _verify_input_signature(roots, embit_psbt, parsed, index)
 
+    _check_tx_modifiable(parsed)
+
 
 def verify_musig2_sp_completion(scenario: Scenario, phase: str, psbt: bytes) -> None:
     """Require each MuSig2-SP round's structural contribution from every participant.
@@ -302,3 +333,4 @@ def verify_musig2_sp_completion(scenario: Scenario, phase: str, psbt: bytes) -> 
                 continue
             if parsed.outputs[index].get(b"\x04") is None:
                 raise VerificationError(f"output {index} has an unresolved Silent Payment script")
+        _check_tx_modifiable(parsed)

@@ -94,6 +94,46 @@ def test_worker_rejects_vendor_failure_reported_with_zero_exit(tmp_path: Path):
     assert result.returncode == 1
 
 
+def test_worker_rejects_zero_collected_tests(tmp_path: Path):
+    source = make_source_checkout(tmp_path)
+    fixtures = tmp_path / "fixtures"
+    fixtures.mkdir()
+
+    def runner(argv, **kwargs):
+        return subprocess.CompletedProcess(argv, 0, "collected 0 items\n", "")
+
+    result = run_worker(
+        source,
+        fixtures,
+        tmp_path / "artifacts",
+        SuiteName.BIP375,
+        "/firmware/python",
+        runner=runner,
+    )
+
+    assert result.returncode == 1
+
+
+def test_worker_rejects_vendor_error_reported_with_zero_exit(tmp_path: Path):
+    source = make_source_checkout(tmp_path)
+    fixtures = tmp_path / "fixtures"
+    fixtures.mkdir()
+
+    def runner(argv, **kwargs):
+        return subprocess.CompletedProcess(argv, 0, "ERROR test_silentpayments.py\n", "")
+
+    result = run_worker(
+        source,
+        fixtures,
+        tmp_path / "artifacts",
+        SuiteName.BIP375,
+        "/firmware/python",
+        runner=runner,
+    )
+
+    assert result.returncode == 1
+
+
 def test_worker_selects_plain_native_test_without_overlay(tmp_path: Path):
     source = make_source_checkout(tmp_path)
     fixtures = tmp_path / "fixtures"

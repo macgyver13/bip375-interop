@@ -54,6 +54,71 @@ def test_completion_check_accepts_fully_signed_psbt():
     verify_bip375_completion(scenario, _fully_signed_single_owner(scenario))
 
 
+def test_completion_check_accepts_sp_spend_signed_with_sighash_default():
+    """SIGHASH_DEFAULT and SIGHASH_ALL are functionally identical for taproot.
+
+    embit's own sp-spend signing path always uses SIGHASH_DEFAULT regardless
+    of the PSBT's declared sighash_type (a real gap found while running
+    bip376-seedsigner-* scenarios); the completion check must not treat that
+    as an invalid signature.
+    """
+    from embit import bip32, bip39
+    from embit.psbt import SIGHASH, derive_hdkey
+    from embit.silent_payments import SilentPaymentsPSBT
+    from embit.silent_payments.signing import match_sp_spend_base
+
+    scenario = _single_owner_scenario()
+    raw = build_bip375_fixture(scenario)
+    psbt = SilentPaymentsPSBT.parse(raw)
+    root = bip32.HDKey.from_seed(bip39.mnemonic_to_seed(mnemonic_for("test-a")))
+    psbt.sign_with(root, sighash=SIGHASH.ALL)
+    base = match_sp_spend_base(psbt.inputs[2], root, root.my_fingerprint, derive_hdkey)
+    psbt.sign_input_with_sp_tweak(base, 2)  # defaults to SIGHASH.DEFAULT, no trailing byte
+
+    verify_bip375_completion(scenario, psbt.serialize())
+
+
+def test_completion_check_rejects_leftover_inputs_modifiable():
+    scenario = _single_owner_scenario()
+    final_raw = _fully_signed_single_owner(scenario)
+    parsed = parse_psbt(final_raw)
+    globals_map = PsbtMap(tuple(
+        entry if entry.key_type != 0x06 else PsbtEntry(entry.key, b"\x01")
+        for entry in parsed.globals.entries
+    ))
+    tampered = PsbtV2(globals_map, parsed.inputs, parsed.outputs).serialize()
+    with pytest.raises(VerificationError, match="inputs-modifiable"):
+        verify_bip375_completion(scenario, tampered)
+
+
+def test_completion_check_rejects_leftover_outputs_modifiable():
+    scenario = _single_owner_scenario()
+    final_raw = _fully_signed_single_owner(scenario)
+    parsed = parse_psbt(final_raw)
+    globals_map = PsbtMap(tuple(
+        entry if entry.key_type != 0x06 else PsbtEntry(entry.key, b"\x02")
+        for entry in parsed.globals.entries
+    ))
+    tampered = PsbtV2(globals_map, parsed.inputs, parsed.outputs).serialize()
+    with pytest.raises(VerificationError, match="outputs-modifiable"):
+        verify_bip375_completion(scenario, tampered)
+
+
+def test_completion_check_rejects_tampered_sighash_byte():
+    """A trailing sighash byte that doesn't match what was actually signed must fail."""
+    scenario = _single_owner_scenario()
+    final_raw = _fully_signed_single_owner(scenario)
+    parsed = parse_psbt(final_raw)
+    inputs = list(parsed.inputs)
+    inputs[2] = PsbtMap(tuple(
+        entry if entry.key_type != 0x13 else PsbtEntry(entry.key, entry.value[:64] + b"\x02")
+        for entry in inputs[2].entries
+    ))
+    tampered = PsbtV2(parsed.globals, tuple(inputs), parsed.outputs).serialize()
+    with pytest.raises(VerificationError, match="does not verify against the owner's output key"):
+        verify_bip375_completion(scenario, tampered)
+
+
 def test_completion_check_rejects_wrong_resolved_script():
     scenario = _single_owner_scenario()
     final_raw = _fully_signed_single_owner(scenario)
@@ -114,7 +179,7 @@ def test_structural_verification_skips_cryptographic_checks():
     outputs = (PsbtMap(tuple(
         entry if entry.key_type != 0x09 else entry for entry in parsed.outputs[0].entries
     ) + (PsbtEntry(bytes([0x04]), b"\x51\x20" + b"\x00" * 32),)),)
-    bogus = PsbtV2(parsed.globals, tuple(inputs), outputs).serialize()
+    bogus = PsbtV2(_with_tx_modifiable_cleared(parsed.globals), tuple(inputs), outputs).serialize()
     verify_bip375_completion(scenario, bogus)
 
 
@@ -153,6 +218,14 @@ def test_expected_sp_output_script_matches_independent_derivation():
     )
     _, outputs = results[scan_key.sec()]
     assert expected_sp_output_script(scenario, raw, 0) == b"\x51\x20" + outputs[0]
+
+
+def _with_tx_modifiable_cleared(globals_map: PsbtMap) -> PsbtMap:
+    """A real resolver clears inputs/outputs-modifiable once a PSBT is complete."""
+    return PsbtMap(tuple(
+        entry if entry.key_type != 0x06 else PsbtEntry(entry.key, b"\x00")
+        for entry in globals_map.entries
+    ))
 
 
 def _per_input_scenario() -> Scenario:
@@ -225,7 +298,9 @@ def _build_per_input_flow(scenario: Scenario) -> tuple[bytes, bytes]:
     parsed4 = parse_psbt(after_b)
     inputs4 = list(parsed4.inputs)
     inputs4[0] = PsbtMap(inputs4[0].entries + (PsbtEntry(bytes([0x02]) + expected_pub_a, b"\x30" * 10),))
-    final_raw = PsbtV2(parsed4.globals, tuple(inputs4), parsed4.outputs).serialize()
+    final_raw = PsbtV2(
+        _with_tx_modifiable_cleared(parsed4.globals), tuple(inputs4), parsed4.outputs
+    ).serialize()
     return contributed, final_raw
 
 
@@ -322,3 +397,24 @@ def test_musig2_completion_requires_resolved_sp_output_after_round2():
     )
     with pytest.raises(VerificationError, match="unresolved Silent Payment script"):
         verify_musig2_sp_completion(scenario, "round2", psbt.serialize())
+
+
+def test_musig2_completion_accepts_resolved_round2_without_tx_modifiable():
+    scenario = _musig2_scenario()
+    psbt = _musig2_psbt(
+        [(b"\x1c" + b"\x00" * 33, b"sig-a"), (b"\x1c" + b"\x01" * 33, b"sig-b")],
+        resolved=True,
+    )
+    verify_musig2_sp_completion(scenario, "round2", psbt.serialize())
+
+
+def test_musig2_completion_rejects_leftover_outputs_modifiable_after_round2():
+    scenario = _musig2_scenario()
+    psbt = _musig2_psbt(
+        [(b"\x1c" + b"\x00" * 33, b"sig-a"), (b"\x1c" + b"\x01" * 33, b"sig-b")],
+        resolved=True,
+    )
+    globals_map = PsbtMap(psbt.globals.entries + (PsbtEntry(b"\x06", b"\x02"),))
+    tampered = PsbtV2(globals_map, psbt.inputs, psbt.outputs)
+    with pytest.raises(VerificationError, match="outputs-modifiable"):
+        verify_musig2_sp_completion(scenario, "round2", tampered.serialize())

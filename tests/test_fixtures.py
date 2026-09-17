@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+from bip375_interop.errors import ConfigurationError
 from bip375_interop.fixtures import build_bip375_fixture
 from bip375_interop.models import Scenario
 from bip375_interop.psbt_maps import parse_psbt
@@ -92,6 +93,53 @@ def test_generated_fixture_supports_sp_spend_bip376_inputs() -> None:
     # Plain P2WPKH output: resolved script, no Silent Payment output info.
     assert psbt.outputs[0].get(b"\x04") is not None
     assert psbt.outputs[0].get(b"\x09") is None
+
+
+def test_generated_fixture_supports_sighash_default_on_p2tr_input() -> None:
+    pytest.importorskip("embit")
+    scenario = Scenario.from_dict({
+        "name": "taproot-sighash-default",
+        "suite": "bip375",
+        "network": "regtest",
+        "signers": [{"name": "one", "backend": "coldcard", "seed_id": "test-a"}],
+        "inputs": [{"owner": "one", "type": "p2tr", "amount_sat": 100_000, "sighash": "default"}],
+        "outputs": [{"type": "silent-payment", "amount_sat": 90_000}],
+    })
+
+    psbt = parse_psbt(build_bip375_fixture(scenario))
+
+    assert psbt.inputs[0].get(b"\x03") == b"\x00\x00\x00\x00"
+
+
+def test_generated_fixture_supports_sighash_default_on_sp_spend_input() -> None:
+    pytest.importorskip("embit")
+    scenario = Scenario.from_dict({
+        "name": "sp-spend-sighash-default",
+        "suite": "bip375",
+        "network": "regtest",
+        "signers": [{"name": "one", "backend": "coldcard", "seed_id": "test-a"}],
+        "inputs": [{"owner": "one", "type": "sp-spend", "amount_sat": 100_000, "sighash": "default"}],
+        "outputs": [{"type": "p2wpkh", "amount_sat": 90_000}],
+    })
+
+    psbt = parse_psbt(build_bip375_fixture(scenario))
+
+    assert psbt.inputs[0].get(b"\x03") == b"\x00\x00\x00\x00"
+
+
+def test_generated_fixture_rejects_unknown_sighash_value() -> None:
+    pytest.importorskip("embit")
+    scenario = Scenario.from_dict({
+        "name": "bad-sighash",
+        "suite": "bip375",
+        "network": "regtest",
+        "signers": [{"name": "one", "backend": "coldcard", "seed_id": "test-a"}],
+        "inputs": [{"owner": "one", "type": "p2tr", "amount_sat": 100_000, "sighash": "none"}],
+        "outputs": [{"type": "silent-payment", "amount_sat": 90_000}],
+    })
+
+    with pytest.raises(ConfigurationError, match="sighash"):
+        build_bip375_fixture(scenario)
 
 
 def test_generated_fixture_supports_p2tr_output() -> None:

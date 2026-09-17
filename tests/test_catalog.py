@@ -25,7 +25,7 @@ signers:
   - {name: jade-b, backend: jade, seed_id: test-b}
 """)
 
-    entries = select(discover(tmp_path), "jade", "affected")
+    entries = select(discover(tmp_path), "jade")
 
     assert [entry.scenario.name for entry in entries] == ["jade-case", "musig-case"]
     assert entries[0].runnable_generated

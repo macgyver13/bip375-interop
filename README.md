@@ -342,3 +342,14 @@ covers `test_musig2_silentpayments.py` and `test_musig2_sp_signers.py`.
 On Apple Silicon, the adapter discovers Homebrew's
 `/opt/homebrew/lib/libsecp256k1.dylib` automatically; set `PYSECP_SO` to
 override the host library path.
+
+## Known issues
+
+- TODO: SeedSigner's pinned embit fork ignores each input's own
+  `PSBT_IN_SIGHASH_TYPE` when signing a BIP-376 sp-spend input
+  (`SilentPaymentsPSBT._sign_sp_spends` / `sign_input_with_sp_tweak` never
+  passes the input's declared sighash through, unlike the ordinary per-input
+  `PSBT.sign_with` path, which does). It always signs SIGHASH_DEFAULT
+  regardless of what the PSBT requests. Harmless on-chain (DEFAULT and ALL are
+  consensus-equivalent for taproot), but worth reporting upstream to
+  SeedSigner/embit.
