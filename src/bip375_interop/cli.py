@@ -100,7 +100,6 @@ def _parser() -> argparse.ArgumentParser:
     check.add_argument("--project", default="harness", choices=(
         "harness", "coldcard", "jade", "seedsigner", "bitsaga-seedsigner",
     ))
-    check.add_argument("--profile", default="affected", choices=("affected", "full"))
     check.add_argument("--scenarios-dir", type=Path, default=Path("scenarios"))
     check.add_argument("--since", default="HEAD", help="Git revision used to inspect local changes")
     check.add_argument(
@@ -314,7 +313,7 @@ def main(argv: list[str] | None = None) -> int:
             }, indent=2))
             return 0
         if args.command == "check":
-            entries = select(discover(args.scenarios_dir), args.project, args.profile)
+            entries = select(discover(args.scenarios_dir), args.project)
             bindings = _psbt_bindings(args.psbt)
             selected_names = {entry.scenario.name for entry in entries}
             unknown = sorted(bindings.keys() - selected_names)
@@ -385,6 +384,9 @@ def main(argv: list[str] | None = None) -> int:
                 "report": str(report),
                 "manifest": str(manifest),
             }, indent=2))
+            if not required:
+                print("every selected scenario was blocked; nothing was actually verified", file=sys.stderr)
+                return 1
             return 0 if passed == required else 1
         scenario = load_scenario(args.scenario)
         get_suite(scenario.suite).validate(scenario)

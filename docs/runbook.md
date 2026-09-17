@@ -36,6 +36,8 @@ All commands below assume `cd /Users/macgyver/src/bip375-interop && source .venv
 | `bip375-jade-two-way` | bip375 | jade x2 | **Working** (same-backend) |
 | `bip375-coldcard-two-way` | bip375 | coldcard x2 | **Working** (same-backend) |
 | `bip375-three-way` | bip375 | coldcard, jade, seedsigner | Blocked at `seedsigner-c` (see below); `coldcard-a`/`jade-b` contribute cleanly |
+| `bip375-coldcard-jade-two-way-taproot-sighash-default` | bip375 | coldcard, jade | **Finding, not working** -- neither device rejects a non-ALL sighash with an SP output present (see below) |
+| `bip375-coldcard-jade-two-way-redundant-sign` | bip375 | coldcard, jade | **Finding, not working** -- Coldcard rejects a second `sign` pass, Jade accepts it (see below) |
 | `bip375-seedsigner-jade-two-way` | bip375 | seedsigner, jade | Blocked (SeedSigner cannot co-own a plain BIP-375 send, see below) |
 | `bip375-seedsigner-coldcard-two-way` | bip375 | seedsigner, coldcard | Blocked, same root cause, confirmed against a second backend |
 | `bip376-coldcard-sp-spend-single` | bip375 (BIP-376) | coldcard | **Working** (spends its own previously-received SP UTXO) |
@@ -181,6 +183,61 @@ SeedSigner is the last signer here instead of the first. Last attempt:
 even be generated: it declared a P2TR input before `build_bip375_fixture` supported one,
 and a second `change` output, which the fixture builder's single-SP-output contract
 rejects -- simplified to one SP payment sized to leave a 1,000 sat fee.)
+
+### `bip375-coldcard-jade-two-way-taproot-sighash-default` -- finding: neither device enforces the SIGHASH_ALL requirement
+
+BIP-375 requires a signer to reject a PSBT that carries a sighash type other than
+SIGHASH_ALL on any input while a Silent Payment output is present. `coldcard-a`'s input
+0 is generated with `sighash: default` (see `fixtures.py`) to probe this:
+
+```bash
+bip375-interop run-generated scenarios/bip375-coldcard-jade-two-way-taproot-sighash-default.yaml
+```
+
+Neither device performs the required rejection. Instead the run fails on an unrelated
+harness invariant -- strict merge's "no field may disappear" rule -- once `jade-b`'s
+`resolve-sign` round returns a contribution with input 0's `sighash_type` (0x03) *entirely
+absent*, not merely rewritten:
+
+```
+error: contribution omits input 0 sighash_type (03)
+```
+
+Confirmed against `artifacts/20260917T000348.221541Z-bip375-coldcard-jade-two-way-taproot-sighash-default-b8261853/`:
+`01-contribute-coldcard-a-merged.psbt` still carries input 0's SIGHASH_DEFAULT unchanged
+(Coldcard's own `contribute` round on its own SIGHASH_DEFAULT input does not fail as
+BIP-375 requires -- it happily contributes its Silent Payment ECDH share and proof
+instead), and `02-resolve-sign-jade-b-returned.psbt` has *no* sighash_type key at all on
+input 0 (confirmed by direct inspection, not just the diff summary). Jade's own input 1
+already carried SIGHASH_ALL from generation, so this run does not show whether Jade
+rewrites a SIGHASH_DEFAULT input of its own -- only that it silently drops the field on
+an input it does not own, rather than either preserving it or rejecting the PSBT.
+Coldcard's `sign` round (where it would sign its own SIGHASH_DEFAULT input) was never
+reached, since the harness aborts at the first violation. Findings, not fixture
+accommodations: BIP-375 compliance gaps on both Coldcard and Jade, worth reporting
+upstream.
+
+### `bip375-coldcard-jade-two-way-redundant-sign` -- finding: Coldcard rejects, Jade accepts a second `sign` pass
+
+`redundant_sign_round: true` appends a `redundant-sign` round (all signers, after the
+scenario's normal rounds) that hands every signer the already-fully-signed PSBT:
+
+```bash
+bip375-interop run-generated scenarios/bip375-coldcard-jade-two-way-redundant-sign.yaml
+```
+
+Coldcard rejects immediately:
+
+```
+error: Coldcard Error: Transaction looks completely signed already?
+```
+
+Jade does not: the same redundant pass against a same-backend two-Jade scenario
+(`bip375-jade-two-way`, same `redundant_sign_round: true` addition) completes without
+error -- Jade accepts and re-returns an already-complete PSBT rather than rejecting it.
+Both behaviors are spec-legal (BIP-375 does not mandate rejecting a redundant sign
+request); recorded here as a device-behavior finding, not something the harness works
+around.
 
 ## BIP-376 (Silent Payment spend) scenarios
 
