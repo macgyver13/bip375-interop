@@ -19,3 +19,9 @@ checkouts:
   bitsaga-seedsigner:
     path: /Users/macgyver/src/bitsaga-seedsigner
     revision: null
+  caravan:
+    path: /Users/macgyver/src/caravan
+    revision: null
+  spdk:
+    path: /Users/macgyver/src/spdk
+    revision: null

@@ -7,6 +7,11 @@ from typing import Any, Mapping
 from .errors import ConfigurationError
 
 
+# Independent implementations that re-check a run's PSBTs without signing.
+# Opt-in per scenario, or all at once with ``check --exhaustive``.
+KNOWN_VALIDATORS = ("caravan", "spdk")
+
+
 @dataclass(frozen=True)
 class Checkout:
     name: str
@@ -48,6 +53,7 @@ class Scenario:
     merge_policy: str = "strict"
     verification: str = "full"
     expect_warning: bool = False
+    validators: tuple[str, ...] = ()
 
     @classmethod
     def from_dict(cls, value: Mapping[str, Any]) -> "Scenario":
@@ -66,6 +72,12 @@ class Scenario:
         verification = str(value.get("verification", "full"))
         if verification not in ("full", "structural"):
             raise ConfigurationError(f"verification must be full or structural, got {verification!r}")
+        validators = tuple(str(item) for item in value.get("validators", ()))
+        unknown = sorted(set(validators) - set(KNOWN_VALIDATORS))
+        if unknown:
+            raise ConfigurationError(f"unknown validators: {', '.join(unknown)}")
+        if validators and value["suite"] != "bip375":
+            raise ConfigurationError("validators currently apply to the bip375 suite only")
         return cls(
             name=str(value["name"]), suite=str(value["suite"]),
             network=str(value["network"]), signers=signers,
@@ -73,4 +85,5 @@ class Scenario:
             inputs=tuple(value.get("inputs", ())), outputs=tuple(value.get("outputs", ())),
             merge_policy=merge_policy, verification=verification,
             expect_warning=bool(value.get("expect_warning", False)),
+            validators=validators,
         )

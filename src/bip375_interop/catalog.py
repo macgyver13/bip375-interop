@@ -42,6 +42,7 @@ def select(entries: tuple[ScenarioEntry, ...], project: str) -> tuple[ScenarioEn
     return tuple(
         entry for entry in entries
         if any(signer.backend == project for signer in entry.scenario.signers)
+        or project in entry.scenario.validators
     )
 
 
