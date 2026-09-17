@@ -190,6 +190,11 @@ Per-scenario status, findings and the manual MuSig2-SP recipe are in
   worker and declaring its own build/test/native-suite commands. `coldcard_worker.py`
   is the native-suite variant (Milestone 1): runs a backend's own upstream test suite
   in a disposable checkout copy rather than the persistent PSBT protocol.
+- **Validators** -- independent implementations that never sign but re-check every
+  PSBT snapshot a run wrote. `adapters/caravan.py` runs Caravan's TypeScript `PsbtV2`
+  parser (`caravan_validate.cjs`) against each snapshot. Validators are opt-in: a
+  scenario lists them under `validators:`, `check --exhaustive` enables them for every
+  bip375 scenario, and `check --project caravan` selects the scenarios that name it.
 - **`treasury.py`** / **`fixtures.py`** -- PSBT/descriptor construction. `treasury.py`
   derives a shared MuSig2 treasury descriptor from the harness's own published test
   seeds (`test_seeds.py`), in either key architecture -- **aggregate-then-derive**
@@ -262,22 +267,6 @@ flowchart TD
     chain -->|"verify_onchain"| verify["silent-pay: verify_onchain real BIP-352 scan vs live chain"]
 ```
 
-## Quick start
-
-```sh
-python3.11 -m venv .venv
-. .venv/bin/activate
-pip install -e '.[test]'
-cp config/interop.example.yaml interop.yaml
-bip375-interop doctor --allow-dirty
-bip375-interop validate scenarios/bip375-three-way.yaml
-pytest
-```
-
-Pin every checkout `revision` before treating a run as reproducible. Dirty sources are
-rejected by default. `--allow-dirty` is intended for development and records the working
-tree state as non-reproducible.
-
 ## Design boundaries
 
 Scenario YAML contains common signer/input/output intent and a suite-specific block.
@@ -289,59 +278,6 @@ Each run writes an isolated artifact directory containing the input and output f
 signer, semantic checks, logs, and a hash manifest. Native checkout paths are inputs, not
 scratch space. Builds and fixture overlays belong in harness-managed temporary/cache
 directories.
-
-Phase 2 adds a persistent external worker protocol, strict PSBTv2 map merging, and a
-working upstream SeedSigner BIP-375 path:
-
-```sh
-bip375-interop plan scenarios/bip375-seedsigner-single.yaml
-bip375-interop run scenarios/bip375-seedsigner-single.yaml --psbt unresolved.psbt
-```
-
-The worker accepts only published test-seed identifiers, stays alive for every required
-round, and writes each returned and merged PSBT to an isolated run directory. Coldcard
-can consume external MuSig2 fixture bundles through a disposable checkout overlay.
-Coldcard still needs its per-PSBT transport before it can join an arbitrary mixed
-run. Jade's persistent QEMU transport is available for the single-device lane;
-the next fixture-generator milestone makes it usable in a mixed run.
-
-Jade now also has a single-command native QEMU smoke lane. It uses existing
-QEMU build artifacts, starts an isolated process on an ephemeral loopback
-port, runs Jade's own BIP-375 resolve-and-sign fixture through the JSON-lines
-worker, strictly merges the returned PSBT, and stops the process:
-
-```sh
-bip375-interop --allow-dirty smoke jade
-```
-
-The command reports `mixed_device_psbt_interoperability: "not exercised"`.
-It is evidence that the Jade emulator transport works; it is not yet evidence
-that Jade can process another backend's modified PSBT. The same persistent
-worker is the transport used by future mixed BIP-375 scenarios.
-
-The first generated mixed lane is SeedSigner plus Jade. Install both upstream
-projects' pinned Python requirements into the harness environment, then run:
-
-```sh
-python -m pip install -r /Users/macgyver/src/seedsigner/requirements.txt
-python -m pip install -r /Users/macgyver/src/Jade/requirements.txt
-bip375-interop --allow-dirty run-generated \
-  scenarios/bip375-seedsigner-jade-two-way.yaml
-```
-
-`run-generated` derives each P2WPKH test input from its declared published
-test seed, builds an unresolved PSBTv2 with SIGHASH_ALL, starts Jade QEMU on
-an ephemeral host port, and retains the same Jade connection across the three
-BIP-375 phases. The run is not considered proven until it completes against a
-live Jade QEMU instance.
-
-Coldcard's native adapter runs its upstream simulator suites in a disposable
-checkout copy. The BIP-375 lane covers `test_bip375_vectors.py`,
-`test_silentpayments.py`, and `test_bip352_vectors.py`; the MuSig2-SP lane
-covers `test_musig2_silentpayments.py` and `test_musig2_sp_signers.py`.
-On Apple Silicon, the adapter discovers Homebrew's
-`/opt/homebrew/lib/libsecp256k1.dylib` automatically; set `PYSECP_SO` to
-override the host library path.
 
 ## Known issues
 
