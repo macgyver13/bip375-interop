@@ -33,20 +33,16 @@ def discover(root: Path) -> tuple[ScenarioEntry, ...]:
     return tuple(entries)
 
 
-def select(entries: tuple[ScenarioEntry, ...], project: str, profile: str) -> tuple[ScenarioEntry, ...]:
-    if project == "harness":
-        selected = entries
-    else:
-        selected = tuple(
-            entry for entry in entries
-            if any(signer.backend == project for signer in entry.scenario.signers)
-        )
-    if profile == "full":
-        return selected
+def select(entries: tuple[ScenarioEntry, ...], project: str) -> tuple[ScenarioEntry, ...]:
     # Feature mapping is intentionally conservative until explicit path rules
     # are versioned in the catalog: a project change exercises every scenario
     # that names that backend.
-    return selected
+    if project == "harness":
+        return entries
+    return tuple(
+        entry for entry in entries
+        if any(signer.backend == project for signer in entry.scenario.signers)
+    )
 
 
 def changed_files(root: Path, since: str) -> tuple[str, ...]:

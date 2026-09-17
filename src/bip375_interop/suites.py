@@ -37,6 +37,7 @@ class Bip375Config:
     """Configuration for a plain BIP-375 signer interoperability run."""
 
     contribution_mode: str = "per-input"
+    redundant_sign_round: bool = False
 
     def validate(self) -> None:
         if self.contribution_mode not in {"global", "per-input"}:
@@ -212,10 +213,20 @@ def scenario_rounds(scenario: Scenario) -> tuple[Round, ...]:
     needs_sp_output_contribution = any(
         item.get("type") == "silent-payment" for item in scenario.outputs
     )
+    redundant = scenario.suite_config.get("redundant_sign_round", False)
     if mode == "global" or len(names) == 1 or not needs_sp_output_contribution:
-        return (Round("resolve-sign", names),)
-    return (
-        Round("contribute", names[:-1]),
-        Round("resolve-sign", names[-1:]),
-        Round("sign", names[:-1]),
-    )
+        rounds = (Round("resolve-sign", names),)
+    else:
+        rounds = (
+            Round("contribute", names[:-1]),
+            Round("resolve-sign", names[-1:]),
+            Round("sign", names[:-1]),
+        )
+    if redundant:
+        # A second pass on an already-complete PSBT, deliberately named apart
+        # from "sign" so `_assert_phase_contract` does not require a fresh
+        # signature from it: whether a device accepts or rejects re-signing a
+        # fully-signed PSBT is itself the thing under test, and both answers
+        # are spec-legal.
+        rounds = rounds + (Round("redundant-sign", names),)
+    return rounds

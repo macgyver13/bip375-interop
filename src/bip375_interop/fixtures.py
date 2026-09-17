@@ -22,6 +22,14 @@ _BIP86_TEST_PATH = (0x80000056, 0x80000001, 0x80000000)
 # own sp_tweak, not from deriving a different base key per input.
 _BIP352_SPEND_PATH = (0x80000160, 0x80000001, 0x80000000, 0x80000000, 0)
 _OUTPUT_TYPES = {"silent-payment", "p2wpkh", "p2tr"}
+_SIGHASH_TYPES = {"all": 1, "default": 0}
+
+
+def _sighash_type(item: dict) -> int:
+    sighash = item.get("sighash", "all")
+    if sighash not in _SIGHASH_TYPES:
+        raise ConfigurationError(f"input sighash must be one of {sorted(_SIGHASH_TYPES)}, got {sighash!r}")
+    return _SIGHASH_TYPES[sighash]
 
 
 def build_bip375_fixture(scenario: Scenario) -> bytes:
@@ -94,10 +102,14 @@ def build_bip375_fixture(scenario: Scenario) -> bytes:
                 [],
                 DerivationPath(root.my_fingerprint, path),
             )
-            # SIGHASH_ALL, not SIGHASH_DEFAULT: real Jade firmware normalizes a
-            # taproot input's sighash type to explicit SIGHASH_ALL while signing,
-            # which conflicts with a pre-set SIGHASH_DEFAULT under strict merge.
-            scope.sighash_type = 1
+            # Default SIGHASH_ALL: real Jade firmware normalizes a taproot
+            # input's sighash type to explicit SIGHASH_ALL while signing,
+            # which conflicts with a pre-set SIGHASH_DEFAULT under strict
+            # merge. A scenario can opt into `sighash: default` anyway, since
+            # BIP-375 requires a signer to reject SIGHASH_DEFAULT when SP
+            # outputs are present, and that rejection is itself the thing
+            # under test.
+            scope.sighash_type = _sighash_type(item)
         else:
             # sp-spend (BIP-376): this input is itself a previously-received
             # Silent Payment output. Its output key is the owner's own spend
@@ -117,7 +129,7 @@ def build_bip375_fixture(scenario: Scenario) -> bytes:
             scope.sp_spend_bip32_derivations[spend_pubkey.sec()] = DerivationPath(
                 root.my_fingerprint, path
             )
-            scope.sighash_type = 1
+            scope.sighash_type = _sighash_type(item)
         psbt.add_input(scope)
         total += amount
 

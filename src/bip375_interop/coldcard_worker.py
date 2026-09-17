@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -113,7 +114,12 @@ def _run_test_module(
     stderr = result.stderr or ""
     sys.stdout.write(stdout)
     sys.stderr.write(stderr)
-    if result.returncode or "\nFAILED " in stdout:
+    if (
+        result.returncode
+        or "\nFAILED " in stdout
+        or re.search(r"^collected 0 items", stdout, re.MULTILINE)
+        or re.search(r"^ERROR", stdout, re.MULTILINE)
+    ):
         return subprocess.CompletedProcess(result.args, 1, stdout, stderr)
     return result
 
