@@ -68,7 +68,6 @@ def expected_sp_output_script(scenario: Scenario, psbt: bytes, output_index: int
 
     from embit.silent_payments import SilentPaymentsPSBT
     from embit.silent_payments.sp import (
-        all_outpoints,
         derive_sp_outputs,
         get_eligible_inputs,
         group_sp_outputs_by_scan_key,
@@ -80,16 +79,11 @@ def expected_sp_output_script(scenario: Scenario, psbt: bytes, output_index: int
             f"output {output_index} has no Silent Payment recipient information"
         )
 
-    groups = group_sp_outputs_by_scan_key(embit_psbt.outputs)
-    scan_spend_groups = {}
-    output_order = {}
-    for sk_bytes, (scan_key, pairs) in groups.items():
-        scan_spend_groups[sk_bytes] = (scan_key, [spend_key for _, spend_key in pairs])
-        output_order[sk_bytes] = [out_idx for out_idx, _ in pairs]
+    scan_spend_groups, output_order = group_sp_outputs_by_scan_key(embit_psbt.outputs)
 
     roots = _signer_roots(scenario)
     priv_keys = []
-    for index in get_eligible_inputs(embit_psbt.inputs, has_sp_outputs=True):
+    for index in get_eligible_inputs(embit_psbt.inputs):
         priv = _match_input_privkey(roots, embit_psbt.inputs[index])
         if priv is None:
             raise VerificationError(f"input {index} fingerprint matches no scenario seed")
@@ -97,11 +91,11 @@ def expected_sp_output_script(scenario: Scenario, psbt: bytes, output_index: int
     if not priv_keys:
         raise VerificationError("scenario has no BIP-352 eligible inputs")
 
-    outpoints = all_outpoints(embit_psbt)
+    outpoints = [inp.vin for inp in embit_psbt.inputs]
     derivation = derive_sp_outputs(priv_keys, outpoints, scan_spend_groups)
     if derivation is None:
         raise VerificationError("scenario input private keys sum to zero")
-    _, results = derivation
+    _, _, results = derivation
 
     target_scan = embit_psbt.outputs[output_index].sp_data.scan_key.sec()
     _, outputs = results[target_scan]
@@ -130,7 +124,7 @@ def _verify_sp_input_evidence(scenario: Scenario, embit_psbt, parsed: PsbtV2) ->
         return
 
     roots = _signer_roots(scenario)
-    eligible = get_eligible_inputs(embit_psbt.inputs, has_sp_outputs=True)
+    eligible = get_eligible_inputs(embit_psbt.inputs)
     scan_keys = {output.sp_data.scan_key.sec() for output in sp_outputs}
     for scan_key_data in scan_keys:
         global_share_key = bytes([_GLOBAL_SP_ECDH_SHARE]) + scan_key_data
