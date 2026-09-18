@@ -553,6 +553,17 @@ Pass `--key-architecture derive-then-aggregate` to `treasury-wallet` for the
 
 ### Regtest (self-funding, no external node needed)
 
+The whole sequence below is scripted, including cleanup of the throwaway node:
+
+```bash
+just musig2-regtest aggregate-then-derive   # musig2-sp-coldcard-jade-two-way
+just musig2-regtest derive-then-aggregate   # musig2-sp-jade-derive-first-two-way
+```
+
+It needs `bitcoind` and `bitcoin-cli` on `PATH` (or `BITCOIND` / `BITCOIN_CLI`), and
+prints `PASS` with the txid and artifact directory only after the on-chain scan finds the
+recipient's output. Set `ALLOW_DIRTY=1` for a development run. The manual steps follow.
+
 1. Start a throwaway regtest `bitcoind` on a fresh datadir:
    ```bash
    bitcoind -regtest -datadir=<datadir> -daemon -fallbackfee=0.0001 -rpcport=<port>
