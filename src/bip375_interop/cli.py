@@ -8,7 +8,7 @@ from pathlib import Path
 
 from . import __version__
 from .checkouts import inspect_checkout
-from .config import load_config, load_scenario
+from .config import LOCK_NAME, load_config, load_scenario, write_lock
 from .errors import InteropError
 from .suites import get_suite
 from .suites import scenario_rounds
@@ -27,6 +27,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--allow-dirty", action="store_true")
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("doctor")
+    sub.add_parser("pin", help="write interop.lock with the current commit id of every checkout")
     smoke = sub.add_parser("smoke")
     smoke.add_argument("backend", choices=("jade",))
     validate = sub.add_parser("validate")
@@ -51,6 +52,15 @@ def main(argv: list[str] | None = None) -> int:
                 for c in config.checkouts.values()
             ]
             print(json.dumps([asdict(state) for state in states], indent=2))
+            return 0
+        if args.command == "pin":
+            # A dirty git checkout is never pinned: HEAD would omit the uncommitted changes.
+            pins = {
+                c.name: inspect_checkout(replace(c, revision=None)).revision
+                for c in config.checkouts.values()
+            }
+            write_lock(args.config.parent / LOCK_NAME, pins)
+            print(json.dumps(pins, indent=2))
             return 0
         if args.command == "smoke":
             final_psbt, manifest, size = run_jade_smoke(config)
