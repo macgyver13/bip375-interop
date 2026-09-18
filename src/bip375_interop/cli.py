@@ -10,6 +10,8 @@ from pathlib import Path
 
 from . import __version__
 from .checkouts import inspect_checkout
+from .expectations import load_expectations
+from .regression import STEADY, label_results, previous_results
 from .config import LOCK_NAME, load_config, load_scenario, write_lock
 from .errors import InteropError
 from .models import KNOWN_VALIDATORS
@@ -414,16 +416,30 @@ def main(argv: list[str] | None = None) -> int:
                         ))
                 except InteropError as exc:
                     batch.add(CaseResult(entry.scenario.name, "failed", str(exc)))
-            manifest, report = batch.finalize()
+            expectations_path = args.config.parent / "expectations.yaml"
+            labels = None
+            if expectations_path.is_file():
+                labels = label_results(
+                    batch.results,
+                    load_expectations(expectations_path),
+                    previous_results(config.artifact_root, args.project, batch.path),
+                )
+            manifest, report = batch.finalize(labels)
             passed = sum(item.status == "passed" for item in batch.results)
             required = sum(item.status in {"passed", "failed"} for item in batch.results)
-            print(json.dumps({
+            summary = {
                 "regression_health": None if not required else round(100 * passed / required),
                 "passed": passed,
                 "required": required,
                 "report": str(report),
                 "manifest": str(manifest),
-            }, indent=2))
+            }
+            if labels is not None:
+                summary["labels"] = json.loads(manifest.read_text())["label_counts"]
+                summary["variances"] = {
+                    name: label for name, label in labels.items() if label != STEADY
+                }
+            print(json.dumps(summary, indent=2))
             if not required:
                 print("every selected scenario was blocked; nothing was actually verified", file=sys.stderr)
                 return 1
