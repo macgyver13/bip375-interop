@@ -12,6 +12,7 @@ class Checkout:
     name: str
     path: Path
     revision: str | None = None
+    vcs: str | None = None
 
 
 @dataclass(frozen=True)
