@@ -11,7 +11,8 @@ from pathlib import Path
 from . import __version__
 from .checkouts import inspect_checkout
 from .expectations import load_expectations
-from .regression import STEADY, label_results, previous_results
+from .preflight import backend_checkout, run_preflight
+from .regression import STEADY, has_failures, label_results, previous_results
 from .config import LOCK_NAME, load_config, load_scenario, write_lock
 from .errors import InteropError
 from .models import KNOWN_VALIDATORS
@@ -137,10 +138,7 @@ def _start_workers(config, scenario, run_artifacts, descriptor: str | None = Non
     workers = {}
     states = []
     for signer in scenario.signers:
-        checkout_name = (
-            "bitsaga-seedsigner" if signer.backend in {"bitsaga", "bitsaga-seedsigner"}
-            else signer.backend
-        )
+        checkout_name = backend_checkout(signer.backend)
         checkout = config.checkouts.get(checkout_name)
         if checkout is None:
             raise InteropError(f"missing checkout configuration for {checkout_name}")
@@ -395,6 +393,11 @@ def main(argv: list[str] | None = None) -> int:
                     ],
                 }, indent=2))
                 return 0
+            runnable = [
+                entry.scenario for entry in entries
+                if entry.runnable_generated or entry.scenario.name in bindings
+            ]
+            checkout_states = run_preflight(config, runnable)
             batch = BatchRun(config.artifact_root, args.project)
             for entry in entries:
                 psbt_path = bindings.get(entry.scenario.name)
@@ -424,7 +427,7 @@ def main(argv: list[str] | None = None) -> int:
                     load_expectations(expectations_path),
                     previous_results(config.artifact_root, args.project, batch.path),
                 )
-            manifest, report = batch.finalize(labels)
+            manifest, report = batch.finalize(labels, checkout_states)
             passed = sum(item.status == "passed" for item in batch.results)
             required = sum(item.status in {"passed", "failed"} for item in batch.results)
             summary = {
@@ -443,6 +446,8 @@ def main(argv: list[str] | None = None) -> int:
             if not required:
                 print("every selected scenario was blocked; nothing was actually verified", file=sys.stderr)
                 return 1
+            if labels is not None:
+                return 1 if has_failures(labels) else 0
             return 0 if passed == required else 1
         scenario = load_scenario(args.scenario)
         get_suite(scenario.suite).validate(scenario)

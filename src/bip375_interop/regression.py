@@ -11,6 +11,8 @@ from .expectations import Expectation
 
 STEADY = "STEADY"
 PASSING = {"passed", "completed"}
+# Labels that fail a run. NOT-RUN, CHANGED and FIXED are reported but do not fail it.
+FAILING_LABELS = {"REGRESSION", "UNCLASSIFIED", "NEW"}
 
 
 def classify(
@@ -70,3 +72,7 @@ def previous_results(
         item["name"]: {"status": item["status"], "reason": item.get("reason")}
         for item in payload["results"]
     }
+
+
+def has_failures(labels: Mapping[str, str]) -> bool:
+    return any(label in FAILING_LABELS for label in labels.values())

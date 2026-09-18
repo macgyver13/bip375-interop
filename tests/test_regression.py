@@ -86,3 +86,12 @@ def test_previous_results_ignores_batches_that_never_finalized(tmp_path: Path):
     current = BatchRun(tmp_path, "harness")
 
     assert previous_results(tmp_path, "harness", current.path) is None
+
+
+def test_only_unexpected_or_untriaged_labels_fail_a_run():
+    from bip375_interop.regression import has_failures
+
+    assert has_failures({"a": "REGRESSION"})
+    assert has_failures({"a": "UNCLASSIFIED"})
+    assert has_failures({"a": "NEW"})
+    assert not has_failures({"a": "STEADY", "b": "FIXED", "c": "CHANGED", "d": "NOT-RUN"})

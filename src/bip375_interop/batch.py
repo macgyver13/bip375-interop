@@ -7,7 +7,7 @@ import json
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Mapping
+from typing import Mapping, Sequence
 from uuid import uuid4
 
 
@@ -29,7 +29,9 @@ class BatchRun:
     def add(self, result: CaseResult) -> None:
         self.results.append(result)
 
-    def finalize(self, labels: Mapping[str, str] | None = None) -> tuple[Path, Path]:
+    def finalize(
+        self, labels: Mapping[str, str] | None = None, checkouts: Sequence[object] = ()
+    ) -> tuple[Path, Path]:
         counts = {
             status: sum(item.status == status for item in self.results)
             for status in ("passed", "failed", "blocked", "completed")
@@ -42,6 +44,8 @@ class BatchRun:
             "score": None if required == 0 else round(100 * counts["passed"] / required),
             "results": [asdict(item) for item in self.results],
         }
+        if checkouts:
+            payload["checkouts"] = [asdict(state) for state in checkouts]
         if labels is not None:
             for row in payload["results"]:
                 row["label"] = labels[row["name"]]
