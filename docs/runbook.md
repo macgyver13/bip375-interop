@@ -20,9 +20,9 @@ its current status as of the most recent artifact evidence in `artifacts/`. Comp
   Coldcard scenario; the harness's own `.venv` does not need Coldcard's dependencies
   (`ckcc`, `hid`), only Coldcard's own `ENV` does, since the persistent Coldcard worker
   runs as a separate subprocess using that interpreter.
-- `bip375-interop doctor` checks checkout cleanliness; pass `--allow-dirty` if a
-  checkout (e.g. `silent-pay`, which accumulates `target/` build output) is expected to
-  be dirty.
+- `bip375-interop doctor` prints each checkout's VCS and tip and checks cleanliness;
+  pass `--allow-dirty` if a checkout (e.g. `silent-pay`, which accumulates `target/`
+  build output) is expected to be dirty. See "Pinned versions" under "Regression groups".
 - MuSig2-SP scenarios that take `--psbt` need a real externally-built PSBT -- see
   "Building a MuSig2-SP treasury and initial PSBT" below. Plain BIP-375 scenarios can
   either take `--psbt` or use `run-generated`, which synthesizes one in-process.
@@ -655,6 +655,105 @@ identically, not just parse compatibly.
   that, since a real device will not hand over a test mnemonic.
 - **One fixed account path** (`m/48'/1'/0'/3'`, testnet coin type). silent-pay parses
   whatever origin the descriptor carries, so it is strictly more general here.
+
+### Pinned versions: `interop.lock`
+
+`interop.yaml` is gitignored because it holds local paths, so versions are pinned in the
+committed `interop.lock`: one commit id per checkout name, like `Cargo.lock`.
+
+```bash
+bip375-interop pin    # write interop.lock from the current tip of every checkout
+```
+
+- A lock entry fills a checkout's unset `revision`. An explicit `revision` in
+  `interop.yaml` that disagrees with the lock is a configuration error.
+- A checkout whose tip differs from its pin fails with `expected X, found Y`.
+- `pin` refuses a dirty git checkout even with `--allow-dirty`, because HEAD would omit
+  the uncommitted changes.
+- `vcs:` is optional per checkout (`git`, `jj`, `gitbutler`). When unset it is detected:
+  a `.jj` directory means jj. A jj checkout reports its working-copy commit
+  (`jj log -r @`), not git's HEAD, which is the working copy's parent. It is never dirty,
+  because the commit id captures the files on disk. Reading it snapshots the working
+  copy. `gitbutler` is accepted but currently read as plain git, which gives the workspace
+  merge commit; that is not a stable pin (FIXME in `checkouts.py`).
+- `artifacts/` is not committed. Each run manifest and batch report records the state of
+  the checkouts it used, so a run can be recreated from `interop.lock` plus its manifest.
+
+### Preflight
+
+Before any scenario runs, `check` inspects every checkout the runnable scenarios and their
+validators need, and confirms embit still exports the Silent Payment functions the
+harness imports. All problems are reported together and nothing runs:
+
+```
+error: preflight failed:
+  - jade: checkout is dirty (use --allow-dirty for development)
+  - seedsigner: no checkout configured
+```
+
+The exit code is 2 and no batch is written. `--dry-run` and blocked scenarios skip it.
+The embit check confirms the imported embit lives under the configured `embit` checkout
+and that `group_sp_outputs_by_scan_key` returns the two-value shape in use. It cannot probe
+every behavior. The `.venv` must therefore install embit editable from that checkout
+(`.venv/bin/pip install -e <embit checkout>`); a copied embit in site-packages has an older
+API and fails preflight.
+
+### Expectations and labels
+
+`expectations.yaml` (next to `interop.yaml`) holds the expected status of every scenario
+for the pinned versions, with a reason and a reference. A test keeps it in step with
+`scenarios/`, so a new scenario needs an entry.
+
+| Status | Meaning |
+|---|---|
+| `supported` | passes end to end |
+| `finding` | runs, but a device behaves in a way recorded as a finding |
+| `unsupported` | a known limitation blocks it |
+| `needs-external-psbt` | cannot run in `check` without a silent-pay PSBT and has no verified run |
+| `unclassified` | not yet triaged; resolve on a pinned baseline run |
+
+When the file exists, `check` compares each case with its expectation and with the newest
+finalized batch of the same project, and adds a label to `report.json`, `report.html` and
+the printed summary. The summary lists only the variances.
+
+| Label | Meaning |
+|---|---|
+| `REGRESSION` | expected `supported`, failed |
+| `FIXED` | expected not supported, passed |
+| `CHANGED` | matches its expectation class but its status or reason differs from the previous run |
+| `STEADY` | as expected and unchanged |
+| `NOT-RUN` | expected `supported` but blocked, for example a MuSig2-SP scenario given no `--psbt` |
+| `NEW` | no expectation exists |
+| `UNCLASSIFIED` | its expectation is `unclassified` |
+
+`expectations.yaml` is what `check` trusts. The Quick reference table above is narrative
+and predates it: it lists four scenarios as working that currently fail verification and
+are `unclassified` (`bip376-jade-two-way-sp-spend-to-p2tr`, `bip376-jade-two-way-sp-spend-to-p2wpkh`,
+`bip376-seedsigner-jade-sp-spend-to-p2tr`, `bip376-seedsigner-jade-sp-spend-to-p2wpkh`).
+Change a pin and its expectations in the same commit.
+
+### Exit codes
+
+| Result | Exit |
+|---|---|
+| preflight failure or other configuration error | 2 |
+| every selected scenario blocked | 1 |
+| with expectations: any `REGRESSION`, `UNCLASSIFIED` or `NEW` | 1 |
+| with expectations: everything else, including expected findings | 0 |
+| without `expectations.yaml`: any failed case | 1 |
+
+`FAILING_LABELS` in `regression.py` decides which labels fail a run.
+
+### Running a regression
+
+1. `bip375-interop doctor` to see each checkout's VCS and tip.
+2. `bip375-interop pin` when establishing a new baseline, then review `interop.lock`.
+3. `python -m pytest -q tests` for the harness's own tests.
+4. `bip375-interop check --project harness --exhaustive`. The two 2-of-2 MuSig2-SP
+   scenarios use their stored `scenarios/<name>.psbt`; one with no stored PSBT and no
+   `--psbt` binding is `NOT-RUN`.
+5. Read the variances. A `REGRESSION` or `UNCLASSIFIED` needs a decision; a `FIXED` or
+   `CHANGED` usually means `expectations.yaml` should be updated.
 
 ## Known gotchas
 
