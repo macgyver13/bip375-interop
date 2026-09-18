@@ -1,0 +1,130 @@
+# Expected outcome per scenario for the pinned checkout revisions.
+# status: supported | finding | unsupported | needs-external-psbt | unclassified
+#   supported            passes end to end
+#   finding              runs, but a device behaves in a way the harness records as a finding
+#   unsupported          a known limitation blocks it
+#   needs-external-psbt  cannot run in `check` without a PSBT from silent-pay and no
+#                        verified run exists yet
+#   unclassified         outcome not yet triaged; resolve on the stable-pin baseline run
+# Seeded from the 2026-09-18 full run and docs/runbook.md. Not yet tied to pinned revisions.
+scenarios:
+  bip375-caravan-coldcard-jade-two-way:
+    status: supported
+    reason: passes, every snapshot also validated by Caravan
+    reference: docs/runbook.md
+  bip375-coldcard-jade-two-way:
+    status: supported
+    reason: passes
+    reference: docs/runbook.md
+  bip375-coldcard-jade-two-way-taproot:
+    status: supported
+    reason: passes with both inputs P2TR
+    reference: docs/runbook.md
+  bip375-coldcard-two-way:
+    status: supported
+    reason: passes, same-backend
+    reference: docs/runbook.md
+  bip375-jade-two-way:
+    status: supported
+    reason: passes, same-backend
+    reference: docs/runbook.md
+  bip375-seedsigner-single:
+    status: supported
+    reason: passes
+    reference: docs/runbook.md
+  bip375-seedsigner-single-taproot:
+    status: supported
+    reason: passes with a P2TR key-path input
+    reference: docs/runbook.md
+  bip375-spdk-coldcard-jade-two-way:
+    status: supported
+    reason: passes, final PSBT also verified by the SPDK validator
+    reference: docs/runbook.md
+  bip375-coldcard-jade-two-way-redundant-sign:
+    status: finding
+    reason: Coldcard rejects a second sign pass, Jade accepts it
+    reference: docs/runbook.md
+  bip375-coldcard-jade-two-way-taproot-sighash-default:
+    status: finding
+    reason: neither device rejects a non-ALL sighash with an SP output present
+    reference: docs/runbook.md
+  bip375-seedsigner-coldcard-two-way:
+    status: unsupported
+    reason: SeedSigner cannot co-own a plain BIP-375 send (multi-party SP sends unsupported)
+    reference: docs/runbook.md
+  bip375-seedsigner-jade-two-way:
+    status: unsupported
+    reason: SeedSigner cannot co-own a plain BIP-375 send (multi-party SP sends unsupported)
+    reference: docs/runbook.md
+  bip375-three-way:
+    status: unsupported
+    reason: blocked at seedsigner-c, multi-party SP sends unsupported
+    reference: docs/runbook.md
+  bip376-coldcard-jade-sp-spend-to-p2tr:
+    status: supported
+    reason: passes
+    reference: docs/runbook.md
+  bip376-coldcard-jade-sp-spend-to-p2wpkh:
+    status: supported
+    reason: passes
+    reference: docs/runbook.md
+  bip376-coldcard-jade-sp-spend-to-sp:
+    status: supported
+    reason: passes, chained SP spend into a new SP output
+    reference: docs/runbook.md
+  bip376-coldcard-sp-spend-single:
+    status: supported
+    reason: passes
+    reference: docs/runbook.md
+  bip376-jade-two-way-sp-spend-to-p2tr:
+    status: unclassified
+    reason: runbook says working, failed 2026-09-18 with "final PSBT still has inputs-modifiable set"
+    reference: docs/runbook.md
+  bip376-jade-two-way-sp-spend-to-p2wpkh:
+    status: unclassified
+    reason: runbook says working, failed 2026-09-18 with "final PSBT still has inputs-modifiable set"
+    reference: docs/runbook.md
+  bip376-jade-two-way-sp-spend-to-sp:
+    status: supported
+    reason: passes, chained SP spend into a new SP output
+    reference: docs/runbook.md
+  bip376-seedsigner-coldcard-sp-spend-to-p2wpkh:
+    status: supported
+    reason: passes
+    reference: docs/runbook.md
+  bip376-seedsigner-jade-sp-spend-to-p2tr:
+    status: unclassified
+    reason: runbook says working, failed 2026-09-18 with "contribution omits input 0 sighash_type (03)"
+    reference: docs/runbook.md
+  bip376-seedsigner-jade-sp-spend-to-p2wpkh:
+    status: unclassified
+    reason: runbook says working, failed 2026-09-18 with "contribution omits input 0 sighash_type (03)"
+    reference: docs/runbook.md
+  bip376-seedsigner-jade-sp-spend-to-sp:
+    status: unsupported
+    reason: SeedSigner cannot produce an SP output (same limitation as bip375-seedsigner-jade-two-way)
+    reference: docs/runbook.md
+  bip376-seedsigner-sp-spend-single:
+    status: supported
+    reason: passes
+    reference: docs/runbook.md
+  frost-sp-reserved:
+    status: unsupported
+    reason: reserved suite identifier only
+    reference: docs/runbook.md
+  musig2-sp-coldcard-jade-two-way:
+    status: supported
+    reason: passes end to end on 2026-09-18 given a silent-pay initial PSBT (aggregate-then-derive)
+    reference: docs/runbook.md
+  musig2-sp-jade-derive-first-two-way:
+    status: supported
+    reason: passes end to end on 2026-09-18 given a silent-pay initial PSBT (derive-then-aggregate)
+    reference: docs/runbook.md
+  musig2-sp-signet-treasury:
+    status: needs-external-psbt
+    reason: needs a funded signet treasury, blocked by a BitSaga bug
+    reference: docs/runbook.md
+  musig2-sp-three-way:
+    status: needs-external-psbt
+    reason: round 1 works for coldcard and jade, blocked at bitsaga-c
+    reference: docs/runbook.md
