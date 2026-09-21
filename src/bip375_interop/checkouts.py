@@ -29,7 +29,15 @@ def _git(checkout: Checkout, *args: str) -> bytes:
 
 
 def _vcs(checkout: Checkout) -> str:
-    return checkout.vcs or ("jj" if (checkout.path / ".jj").is_dir() else "git")
+    if checkout.vcs:
+        return checkout.vcs
+    if (checkout.path / ".jj").is_dir():
+        return "jj"
+    try:
+        ref = _git(checkout, "symbolic-ref", "--quiet", "--short", "HEAD").decode()
+    except CheckoutError:
+        return "git"
+    return "gitbutler" if ref.startswith("gitbutler/") else "git"
 
 
 def _jj_revision(checkout: Checkout) -> str:
@@ -61,16 +69,25 @@ def inspect_checkout(checkout: Checkout, allow_dirty: bool = False) -> CheckoutS
         revision = _jj_revision(checkout)
         _require_pinned(checkout, revision)
         return CheckoutState(checkout.name, str(checkout.path), revision, False, None, vcs)
-    # FIXME: for vcs "gitbutler" this reads the workspace merge commit, which changes
-    # whenever any applied branch changes. Pin the applied branch tip instead.
     try:
-        revision = _git(checkout, "rev-parse", "--verify", "HEAD").decode()
+        if vcs == "gitbutler":
+            rev_list = _git(checkout, "rev-list", "--parents", "-n1", "HEAD").decode()
+        else:
+            revision = _git(checkout, "rev-parse", "--verify", "HEAD").decode()
     except CheckoutError:
         # An initialized but unborn repository is useful during development, but
         # can never be claimed as pinned or reproducible.
         if checkout.revision or not allow_dirty:
             raise
         revision = "UNBORN"
+    else:
+        if vcs == "gitbutler":
+            parents = rev_list.split()[1:]
+            if not parents:
+                raise CheckoutError(
+                    f"{checkout.name}: GitButler workspace commit has no parent tips"
+                )
+            revision = parents[0] if len(parents) == 1 else ",".join(sorted(parents))
     _require_pinned(checkout, revision)
     status = _git(checkout, "status", "--porcelain=v1")
     dirty = bool(status)

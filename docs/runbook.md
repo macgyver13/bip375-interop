@@ -682,11 +682,15 @@ bip375-interop pin    # write interop.lock from the current tip of every checkou
 - `pin` refuses a dirty git checkout even with `--allow-dirty`, because HEAD would omit
   the uncommitted changes.
 - `vcs:` is optional per checkout (`git`, `jj`, `gitbutler`). When unset it is detected:
-  a `.jj` directory means jj. A jj checkout reports its working-copy commit
-  (`jj log -r @`), not git's HEAD, which is the working copy's parent. It is never dirty,
-  because the commit id captures the files on disk. Reading it snapshots the working
-  copy. `gitbutler` is accepted but currently read as plain git, which gives the workspace
-  merge commit; that is not a stable pin (FIXME in `checkouts.py`).
+  a `.jj` directory means jj; a symbolic ref under `gitbutler/` means GitButler;
+  otherwise git. Explicit `vcs: gitbutler` forces parent-tip interpretation. A jj
+  checkout reports its working-copy commit (`jj log -r @`), not git's HEAD, which is
+  the working copy's parent. It is never dirty, because the commit id captures the
+  files on disk. Reading it snapshots the working copy. A GitButler checkout derives
+  its revision from `git rev-list --parents -n1 HEAD`: one parent id, or a sorted
+  comma-separated set of applied-stack tips. Recreate that workspace by merging every
+  listed tip; an empty applied stack resolves to the base parent. Dirty status,
+  including modified submodules reported by `git status`, still prevents `pin`.
 - `artifacts/` is not committed. Each run manifest and batch report records the state of
   the checkouts it used, so a run can be recreated from `interop.lock` plus its manifest.
 
