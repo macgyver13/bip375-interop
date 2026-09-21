@@ -73,7 +73,7 @@ Use each repo's own tool:
 
 | Repo | Tool |
 |---|---|
-| bip375-interop, Jade, bitsaga-seedsigner | GitButler (`but`) |
+| bip375-interop, Jade, bitsaga-seedsigner | GitButler (`but`); reported revision is workspace-parent tips, comma-separated when several stacks are applied, never the synthetic workspace commit |
 | silent-pay, bip375-test-generator, coldcard-firmware, spdk | jj (read the tip with `jj log -r @`, not git HEAD) |
 | seedsigner, caravan, embit | git |
 
@@ -87,8 +87,5 @@ of the stack.
 
 ## Known gaps
 
-- `vcs: gitbutler` checkouts (Jade, bitsaga-seedsigner) are read as plain git, which gives
-  the unstable workspace commit. Pin an applied branch tip by hand until that FIXME in
-  `checkouts.py` is closed.
 - `expectations.yaml` is not yet tied to a specific lock; it applies to the lock in the
   same commit.

@@ -33,6 +33,58 @@ def _jj_repo(path: Path) -> None:
     subprocess.run(["jj", "-R", str(path), "describe", "-m", "first"], check=True, capture_output=True)
 
 
+def _git(path: Path, *args: str) -> str:
+    return subprocess.check_output(["git", "-C", str(path), *args], text=True).strip()
+
+
+def _configure_git(path: Path) -> None:
+    subprocess.run(["git", "init", "-q", str(path)], check=True)
+    for args in (["config", "user.email", "t@t"], ["config", "user.name", "t"]):
+        subprocess.run(["git", "-C", str(path), *args], check=True)
+
+
+def _committed_branch(path: Path, commits: int = 2) -> str:
+    _configure_git(path)
+    for i in range(commits):
+        (path / "f").write_text(f"c{i}")
+        subprocess.run(["git", "-C", str(path), "add", "f"], check=True)
+        subprocess.run(["git", "-C", str(path), "commit", "-q", "-m", f"c{i}"], check=True)
+    return _git(path, "rev-parse", "HEAD")
+
+
+def _point_gitbutler_workspace(path: Path, parents: list[str], message: str) -> str:
+    tree = _git(path, "rev-parse", "HEAD^{tree}")
+    cmd = ["commit-tree", tree]
+    for parent in parents:
+        cmd.extend(["-p", parent])
+    cmd.extend(["-m", message])
+    workspace = _git(path, *cmd)
+    subprocess.run(
+        ["git", "-C", str(path), "update-ref", "refs/heads/gitbutler/workspace", workspace],
+        check=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(path), "symbolic-ref", "HEAD", "refs/heads/gitbutler/workspace"],
+        check=True,
+    )
+    return workspace
+
+
+def _gitbutler_workspace(path: Path, parent_count: int = 1) -> tuple[str, list[str]]:
+    _configure_git(path)
+    (path / "f").write_text("base")
+    subprocess.run(["git", "-C", str(path), "add", "f"], check=True)
+    subprocess.run(["git", "-C", str(path), "commit", "-q", "-m", "base"], check=True)
+    base = _git(path, "rev-parse", "HEAD")
+    tree = _git(path, "rev-parse", "HEAD^{tree}")
+    parents = [
+        _git(path, "commit-tree", tree, "-p", base, "-m", f"tip-{i}")
+        for i in range(parent_count)
+    ]
+    workspace = _point_gitbutler_workspace(path, sorted(parents, reverse=True), "workspace")
+    return workspace, parents
+
+
 @needs_jj
 def test_jj_checkout_reports_working_copy_commit_not_git_head(tmp_path: Path):
     _jj_repo(tmp_path)
@@ -61,8 +113,85 @@ def test_jj_checkout_revision_changes_with_the_working_copy(tmp_path: Path):
 
 
 def test_git_checkout_reports_git_vcs(tmp_path: Path):
-    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
-
-    state = inspect_checkout(Checkout("seedsigner", tmp_path), allow_dirty=True)
+    head = _committed_branch(tmp_path)
+    parent = _git(tmp_path, "rev-parse", "HEAD^")
+    state = inspect_checkout(Checkout("seedsigner", tmp_path))
 
     assert state.vcs == "git"
+    assert state.revision == head
+    assert state.revision != parent
+    assert not state.dirty
+
+
+def test_gitbutler_one_parent_reports_parent_not_workspace(tmp_path: Path):
+    workspace, parents = _gitbutler_workspace(tmp_path)
+    state = inspect_checkout(Checkout("jade", tmp_path))
+
+    assert state.vcs == "gitbutler"
+    assert state.revision == parents[0]
+    assert state.revision != workspace
+
+    rewritten = _point_gitbutler_workspace(tmp_path, parents, "workspace-rewrite")
+    assert rewritten != workspace
+    again = inspect_checkout(Checkout("jade", tmp_path))
+    assert again.revision == parents[0]
+
+
+def test_gitbutler_several_parents_are_sorted_and_joined(tmp_path: Path):
+    workspace, parents = _gitbutler_workspace(tmp_path, parent_count=2)
+    merge_order = _git(tmp_path, "rev-list", "--parents", "-n1", "HEAD").split()[1:]
+    state = inspect_checkout(Checkout("jade", tmp_path))
+
+    assert merge_order == sorted(parents, reverse=True)
+    assert state.vcs == "gitbutler"
+    assert state.revision == ",".join(sorted(parents))
+    assert state.revision != workspace
+    assert ",".join(merge_order) != state.revision
+
+
+def test_explicit_vcs_overrides_gitbutler_detection(tmp_path: Path):
+    gb = tmp_path / "gb"
+    workspace, parents = _gitbutler_workspace(gb)
+    git_state = inspect_checkout(Checkout("jade", gb, vcs="git"))
+
+    assert git_state.vcs == "git"
+    assert git_state.revision == workspace
+    assert git_state.revision != parents[0]
+
+    ordinary = tmp_path / "ordinary"
+    head = _committed_branch(ordinary)
+    parent = _git(ordinary, "rev-parse", "HEAD^")
+    gb_state = inspect_checkout(Checkout("seedsigner", ordinary, vcs="gitbutler"))
+
+    assert gb_state.vcs == "gitbutler"
+    assert gb_state.revision == parent
+    assert gb_state.revision != head
+
+
+def test_gitbutler_dirty_is_still_detected(tmp_path: Path):
+    _, parents = _gitbutler_workspace(tmp_path)
+    (tmp_path / "f").write_text("dirty")
+    checkout = Checkout("jade", tmp_path)
+
+    with pytest.raises(CheckoutError, match="dirty"):
+        inspect_checkout(checkout)
+
+    state = inspect_checkout(checkout, allow_dirty=True)
+    assert state.dirty
+    assert state.diff_sha256
+    assert state.revision == parents[0]
+    assert state.vcs == "gitbutler"
+
+
+def test_gitbutler_tip_change_fails_a_parent_tip_pin(tmp_path: Path):
+    _, parents = _gitbutler_workspace(tmp_path)
+    first = inspect_checkout(Checkout("jade", tmp_path)).revision
+    tree = _git(tmp_path, "rev-parse", "HEAD^{tree}")
+    new_tip = _git(tmp_path, "commit-tree", tree, "-p", parents[0], "-m", "moved")
+    _point_gitbutler_workspace(tmp_path, [new_tip], "workspace-moved")
+
+    moved = inspect_checkout(Checkout("jade", tmp_path)).revision
+    assert moved == new_tip
+    assert moved != first
+    with pytest.raises(CheckoutError, match="expected"):
+        inspect_checkout(Checkout("jade", tmp_path, revision=first))
