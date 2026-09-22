@@ -47,15 +47,15 @@ All commands below assume `cd /Users/macgyver/src/bip375-interop && source .venv
 | `bip375-seedsigner-jade-two-way` | bip375 | seedsigner, jade | Blocked (SeedSigner cannot co-own a plain BIP-375 send, see below) |
 | `bip375-seedsigner-coldcard-two-way` | bip375 | seedsigner, coldcard | Blocked, same root cause, confirmed against a second backend |
 | `bip376-coldcard-sp-spend-single` | bip375 (BIP-376) | coldcard | **Working** (spends its own previously-received SP UTXO) |
-| `bip376-jade-two-way-sp-spend-to-p2wpkh` | bip375 (BIP-376) | jade x2 | **Working end to end** |
-| `bip376-jade-two-way-sp-spend-to-p2tr` | bip375 (BIP-376) | jade x2 | **Working end to end** |
+| `bip376-jade-two-way-sp-spend-to-p2wpkh` | bip375 (BIP-376) | jade x2 | **Working** -- fixed, see below (was: Jade never cleared inputs/outputs-modifiable for a plain-destination spend) |
+| `bip376-jade-two-way-sp-spend-to-p2tr` | bip375 (BIP-376) | jade x2 | **Working** -- same fix as the P2WPKH variant, see below |
 | `bip376-jade-two-way-sp-spend-to-sp` | bip375 (BIP-376) | jade x2 | **Working end to end** (chained: spends an SP UTXO into a new SP output) |
 | `bip376-coldcard-jade-sp-spend-to-p2wpkh` | bip375 (BIP-376) | coldcard, jade | **Working end to end** |
 | `bip376-coldcard-jade-sp-spend-to-p2tr` | bip375 (BIP-376) | coldcard, jade | **Working end to end** |
 | `bip376-coldcard-jade-sp-spend-to-sp` | bip375 (BIP-376) | coldcard, jade | **Working end to end** (chained: spends an SP UTXO into a new SP output) |
 | `bip376-seedsigner-sp-spend-single` | bip375 (BIP-376) | seedsigner | **Working** |
-| `bip376-seedsigner-jade-sp-spend-to-p2wpkh` | bip375 (BIP-376) | seedsigner, jade | **Working end to end** (SeedSigner *can* co-own a BIP-376 spend, see below) |
-| `bip376-seedsigner-jade-sp-spend-to-p2tr` | bip375 (BIP-376) | seedsigner, jade | **Working end to end** |
+| `bip376-seedsigner-jade-sp-spend-to-p2wpkh` | bip375 (BIP-376) | seedsigner, jade | **Working** -- fixed, see below (was: Jade dropped SeedSigner's input sighash_type) |
+| `bip376-seedsigner-jade-sp-spend-to-p2tr` | bip375 (BIP-376) | seedsigner, jade | **Working** -- same fix as the P2WPKH variant, see below |
 | `bip376-seedsigner-coldcard-sp-spend-to-p2wpkh` | bip375 (BIP-376) | seedsigner, coldcard | **Working end to end** |
 | `bip376-seedsigner-jade-sp-spend-to-sp` | bip375 (BIP-376) | seedsigner, jade | Blocked, same SP-*output* limitation as `bip375-seedsigner-jade-two-way` -- not a new finding |
 | `musig2-sp-coldcard-jade-two-way` | musig2-sp | coldcard, jade | **Working end to end** (signed, broadcast, confirmed, recipient-verified on regtest) |
@@ -321,9 +321,12 @@ addition to `silent-payment`) output types, so a scenario can spend an SP-receiv
 onward to a plain address or into a new Silent Payment. All scenarios below use
 `run-generated` (in-process fixture, no external `--psbt` needed).
 
-Every combination -- single Coldcard, two independent Jades, and mixed Coldcard+Jade --
-works end to end for all three destination types, live-verified via real signature
-fields (`PSBT_IN_TAP_KEY_SIG`) added by the actual simulator/QEMU firmware:
+Every combination, single Coldcard, two independent Jades, and mixed Coldcard+Jade,
+works end to end for the chained SP destination and for single Coldcard, live-verified
+via real signature fields (`PSBT_IN_TAP_KEY_SIG`) added by the actual simulator/QEMU
+firmware. The two-Jade pair for the plain P2WPKH/P2TR destinations was blocked by a
+Jade bug, now fixed; see "Jade never clears inputs/outputs-modifiable for a plain
+BIP-376 spend" below.
 
 ```bash
 bip375-interop run-generated scenarios/bip376-coldcard-sp-spend-single.yaml
@@ -365,19 +368,98 @@ is a BIP-375 **send**-side limitation. It does not apply to BIP-376 **spend** in
 `sign_with()` only calls `derive_sp_outputs()` `if self.has_sp_outputs`, and separately
 always calls `_sign_sp_spends()`, which resolves `sp_tweak` inputs generically via
 `resolve_input_privkey`/`match_sp_spend_base` regardless of how many other inputs are
-present or who owns them. Verified directly: `bip376-seedsigner-jade-sp-spend-to-p2wpkh`,
-`-to-p2tr`, and `bip376-seedsigner-coldcard-sp-spend-to-p2wpkh` all sign correctly with
-SeedSigner as a genuine co-owner alongside Jade/Coldcard -- real `PSBT_IN_TAP_KEY_SIG` on
-every input. `bip376-seedsigner-jade-sp-spend-to-sp` (same signers, but the output is a
-*new* Silent Payment) fails with the identical `SPValidationError` as before, confirming
-the boundary is precisely "can SeedSigner co-own SP *output* construction" (no), not "can
-SeedSigner co-own BIP-376 *input* spending" (yes).
+present or who owns them. Verified directly: `bip376-seedsigner-coldcard-sp-spend-to-p2wpkh` signs correctly with
+SeedSigner as a genuine co-owner alongside Coldcard, real `PSBT_IN_TAP_KEY_SIG` on every
+input. The Jade pairing for a plain destination (`bip376-seedsigner-jade-sp-spend-to-p2wpkh`,
+`-to-p2tr`) was blocked by an unrelated Jade bug, now fixed: see "Jade drops a co-owner's
+sighash_type on a BIP-376 spend" below. `bip376-seedsigner-jade-sp-spend-to-sp` (same
+signers, but the output is a *new* Silent Payment) fails with the identical
+`SPValidationError` as before, confirming the boundary is precisely "can SeedSigner
+co-own SP *output* construction" (no), not "can SeedSigner co-own BIP-376 *input*
+spending" (yes).
 
 ```bash
 bip375-interop run-generated scenarios/bip376-seedsigner-sp-spend-single.yaml
 bip375-interop run-generated scenarios/bip376-seedsigner-jade-sp-spend-to-p2wpkh.yaml
 bip375-interop run-generated scenarios/bip376-seedsigner-jade-sp-spend-to-p2tr.yaml
 bip375-interop run-generated scenarios/bip376-seedsigner-coldcard-sp-spend-to-p2wpkh.yaml
+```
+
+### Jade never clears inputs/outputs-modifiable for a plain BIP-376 spend -- fixed
+
+`bip376-jade-two-way-sp-spend-to-p2tr` and `bip376-jade-two-way-sp-spend-to-p2wpkh`
+(two independent Jades, plain P2TR/P2WPKH destination) used to fail verification with
+`final PSBT still has inputs-modifiable set`. Since there is no Silent Payment output to
+resolve, `scenario_rounds` schedules a single `resolve-sign` round for both signers (see
+"Real harness round-scheduling gap found and fixed" above): each Jade contributes its
+own input once, and neither ever cleared the PSBT's global inputs/outputs-modifiable
+flags (global field `0x06`), confirmed by inspecting every intermediate PSBT in the run:
+the byte stayed `0x03` from `00-initial.psbt` through `final.psbt`.
+
+Compared directly against `bip376-coldcard-jade-sp-spend-to-p2tr`, the identical round
+shape (per-input, single `resolve-sign` round, plain P2TR destination) with Coldcard as
+the first signer instead of Jade: Coldcard clears the flags to `0x00` on its own single
+pass, before Jade is even asked to contribute. Jade did correctly clear the flags when
+it is the *resolving* signer in the 3-round SP-output dance
+(`bip376-jade-two-way-sp-spend-to-sp` passes, and its `02-resolve-sign-jade-b-merged.psbt`
+shows the flags cleared there, via `wally_psbt_sp_musig_round1`/`round2` in
+`components/libwally-core/upstream/src/silentpayments.c`). So this was specific to the
+plain-destination, single-round shape: the plain-spend signing loop in
+`main/process/sign_psbt.c` (`sign_psbt()`) never touched `tx_modifiable_flags` at all --
+that logic only existed on the SP-MuSig2 resolve path.
+
+BIP-370's Signer role is explicit that this is required: *"a signer must update the
+PSBT_GLOBAL_TX_MODIFIABLE field after signing inputs... If the Signer added a signature
+that does not use SIGHASH_ANYONECANPAY, the Input Modifiable flag must be set to
+False"* (mirrored for Outputs Modifiable/SIGHASH_NONE).
+
+Fixed in Jade (`main/process/sign_psbt.c`, `sign_psbt()`): after the per-input signing
+loop, for every input signed this round, inspect the resolved sighash and clear
+`WALLY_PSBT_TXMOD_INPUTS` unless every signed input used `SIGHASH_ANYONECANPAY`, and
+clear `WALLY_PSBT_TXMOD_OUTPUTS` unless every signed input used `SIGHASH_NONE`. Verified
+against a rebuilt QEMU flash image: both scenarios now produce a `final.psbt` with global
+field `0x06` at `0x00`.
+
+```bash
+bip375-interop run-generated scenarios/bip376-jade-two-way-sp-spend-to-p2tr.yaml
+```
+
+### Jade drops a co-owner's sighash_type on a BIP-376 spend -- fixed
+
+`bip376-seedsigner-jade-sp-spend-to-p2tr` and `bip376-seedsigner-jade-sp-spend-to-p2wpkh`
+(SeedSigner owns input 0, Jade owns input 1) used to fail the strict additive-merge check
+with `contribution omits input 0 sighash_type (03)`: Jade's own `resolve-sign`
+contribution, for its own input 1, came back with input 0's `PSBT_IN_SIGHASH_TYPE`
+missing entirely, even though Jade does not own that input and the field was present and
+unchanged through SeedSigner's own contribution round.
+
+Compared directly against `bip376-seedsigner-coldcard-sp-spend-to-p2wpkh`, the identical
+scenario shape with Coldcard substituted for Jade as the second signer: Coldcard
+preserves SeedSigner's input 0 `sighash_type` correctly all the way to `final.psbt`. Jade
+paired with another Jade also preserves a co-owner's `sighash_type` correctly (no merge
+violation in `bip376-jade-two-way-sp-spend-to-p2tr`'s own round, independent of that
+scenario's separate inputs-modifiable finding above), so this was not "Jade drops any
+field it doesn't own" in general; it reproduced specifically when the co-owned input was
+already finalized. A byte-level diff of every intermediate PSBT showed SeedSigner's input
+0 arriving with a clean, canonical `PSBT_IN_SIGHASH_TYPE` (key `03`, value `01000000`)
+alongside `PSBT_IN_FINAL_SCRIPTWITNESS` -- ie. SeedSigner had already finalized its own
+input before handing off to Jade. Root cause was in libwally, not Jade's own PSBT code:
+`psbt.c`'s serializer treats a finalized input's sighash/partial-sig/redeem-script/
+witness-script fields as stale and skips re-emitting them unless
+`WALLY_PSBT_SERIALIZE_FLAG_REDUNDANT` is passed, per BIP-174's "should be cleared"
+finalizer guidance -- and Jade's own `serialise_psbt()` (`main/process/sign_psbt.c`)
+always passed `flags = 0`. Jade never finalizes SeedSigner's input, so this amounted to
+Jade dropping a field it had no business touching, violating BIP-174's Combiner rule
+that *"the resulting PSBT must contain all of the key-value pairs from each of the
+PSBTs"* combined.
+
+Fixed by passing `WALLY_PSBT_SERIALIZE_FLAG_REDUNDANT` to both the `wally_psbt_get_length`
+and `wally_psbt_to_bytes` calls in `serialise_psbt()`. Verified against a rebuilt QEMU
+flash image: both scenarios now produce a `final.psbt` with SeedSigner's input 0
+`PSBT_IN_SIGHASH_TYPE` intact.
+
+```bash
+bip375-interop run-generated scenarios/bip376-seedsigner-jade-sp-spend-to-p2tr.yaml
 ```
 
 ## MuSig2-SP scenarios

@@ -134,7 +134,7 @@ not as evidence of correctness.
 |---|---|---|
 | STEADY | 19 | matches its expectation, unchanged |
 | CHANGED | 5 | the coldcard scenarios that failed at the wrong (`musig_silentpayments`) pin now pass, recovering after the pin correction above; not a regression |
-| UNCLASSIFIED | 4 | `bip376-jade-two-way-sp-spend-to-p2tr`, `bip376-jade-two-way-sp-spend-to-p2wpkh`, `bip376-seedsigner-jade-sp-spend-to-p2tr`, `bip376-seedsigner-jade-sp-spend-to-p2wpkh`, the same four flagged since 2026-09-18; still not triaged |
+| UNCLASSIFIED | 4 | `bip376-jade-two-way-sp-spend-to-p2tr`, `bip376-jade-two-way-sp-spend-to-p2wpkh`, `bip376-seedsigner-jade-sp-spend-to-p2tr`, `bip376-seedsigner-jade-sp-spend-to-p2wpkh`, the same four flagged since 2026-09-18; triaged below, now `finding` |
 | NOT-RUN | 2 | the two MuSig2-SP scenarios (no `--psbt` bound in this run; verified separately below) |
 
 No REGRESSION, no NEW. `check` exits 1 solely because of the four UNCLASSIFIED entries,
@@ -150,6 +150,40 @@ MuSig2-SP legs, run separately against `baseline/interop.yaml` with a round-1 PS
 
 The first leg's txid is identical to an earlier, unpinned manual run in this same
 session, which is a good sign of determinism given the same wallet seeds and treasury.
+
+### Triage: the four UNCLASSIFIED scenarios (2026-09-22)
+
+Both pairs are genuine Jade firmware findings, isolated by direct comparison against
+Coldcard in the byte-for-byte identical scenario shape, not harness bugs and not
+regressions. Both are now `finding` in `expectations.yaml`. Full writeups in
+`docs/runbook.md` under "Jade never clears inputs/outputs-modifiable for a plain
+BIP-376 spend" and "Jade drops a co-owner's sighash_type on a BIP-376 spend".
+
+- `bip376-jade-two-way-sp-spend-to-p2tr` / `-p2wpkh`: Jade never clears the global
+  inputs/outputs-modifiable flags in a jade+jade single-`resolve-sign`-round, non-SP-output
+  spend. Coldcard clears them on its first pass in the identical round shape
+  (`bip376-coldcard-jade-sp-spend-to-p2tr`). Jade does clear them correctly when it is
+  the resolving signer in the 3-round SP-output dance, so this is specific to the
+  plain-destination, single-round shape, where no device is ever the one expected to
+  clear them.
+- `bip376-seedsigner-jade-sp-spend-to-p2tr` / `-p2wpkh`: Jade's own contribution drops
+  `sighash_type` on SeedSigner's (not its own) input. Coldcard preserves that same field
+  correctly in the identical scenario shape
+  (`bip376-seedsigner-coldcard-sp-spend-to-p2wpkh`), and Jade preserves a Jade co-owner's
+  `sighash_type` correctly, so this reproduces specifically when the co-owned input was
+  produced by SeedSigner. The runbook's earlier claim that all three SeedSigner+Jade
+  BIP-376 spend scenarios sign correctly with a real signature on every input was
+  corrected; that only held for SeedSigner+Coldcard.
+
+### Known flake: an occasional Coldcard simulator startup timeout
+
+One exhaustive baseline run flagged `bip375-caravan-coldcard-jade-two-way` as a
+REGRESSION with `Coldcard simulator did not become ready`. It passed cleanly on retry in
+isolation, with no leftover simulator process and nothing in this session touching
+Coldcard's startup path; a second full exhaustive run came back clean. Likely transient
+resource contention when many Coldcard simulator instances start in quick succession
+during a long batch, not a code regression. Worth a retry before trusting a lone
+REGRESSION naming this failure reason.
 
 ### rust-psbt: an undeclared fourth pin
 
