@@ -77,12 +77,12 @@ scenarios:
     reason: passes
     reference: docs/runbook.md
   bip376-jade-two-way-sp-spend-to-p2tr:
-    status: unclassified
-    reason: runbook says working, failed 2026-09-18 with "final PSBT still has inputs-modifiable set"
+    status: supported
+    reason: passes since the sign_psbt.c fix that clears inputs/outputs-modifiable per BIP-370 after a plain-spend sign; not yet pinned, fix is uncommitted in the Jade fork
     reference: docs/runbook.md
   bip376-jade-two-way-sp-spend-to-p2wpkh:
-    status: unclassified
-    reason: runbook says working, failed 2026-09-18 with "final PSBT still has inputs-modifiable set"
+    status: supported
+    reason: passes since the sign_psbt.c fix that clears inputs/outputs-modifiable per BIP-370 after a plain-spend sign; not yet pinned, fix is uncommitted in the Jade fork
     reference: docs/runbook.md
   bip376-jade-two-way-sp-spend-to-sp:
     status: supported
@@ -93,12 +93,12 @@ scenarios:
     reason: passes
     reference: docs/runbook.md
   bip376-seedsigner-jade-sp-spend-to-p2tr:
-    status: unclassified
-    reason: runbook says working, failed 2026-09-18 with "contribution omits input 0 sighash_type (03)"
+    status: supported
+    reason: passes since the serialise_psbt fix that adds WALLY_PSBT_SERIALIZE_FLAG_REDUNDANT, preserving sighash_type on an already-finalized co-owned input; not yet pinned, fix is uncommitted in the Jade fork
     reference: docs/runbook.md
   bip376-seedsigner-jade-sp-spend-to-p2wpkh:
-    status: unclassified
-    reason: runbook says working, failed 2026-09-18 with "contribution omits input 0 sighash_type (03)"
+    status: supported
+    reason: passes since the serialise_psbt fix that adds WALLY_PSBT_SERIALIZE_FLAG_REDUNDANT, preserving sighash_type on an already-finalized co-owned input; not yet pinned, fix is uncommitted in the Jade fork
     reference: docs/runbook.md
   bip376-seedsigner-jade-sp-spend-to-sp:
     status: unsupported
