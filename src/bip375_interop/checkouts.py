@@ -44,14 +44,19 @@ def _jj_revision(checkout: Checkout) -> str:
     # In a jj repo git's HEAD is the working copy's parent, so the tip under test is
     # the working-copy commit itself. Reading it snapshots the working copy, which
     # makes the commit id a complete record of the files on disk.
+    # jj writes an informational notice to stderr on success too (e.g. "Done importing
+    # changes from the underlying Git repo", printed whenever something touched the
+    # colocated git refs directly), so stderr must stay separate from the commit id and
+    # only be used to build the error message on failure.
     try:
-        return subprocess.check_output(
+        result = subprocess.run(
             ["jj", "-R", str(checkout.path), "log", "-r", "@", "--no-graph", "-T", "commit_id"],
-            stderr=subprocess.STDOUT,
-        ).decode().strip()
+            capture_output=True, check=True,
+        )
     except (OSError, subprocess.CalledProcessError) as exc:
-        detail = getattr(exc, "output", b"").decode(errors="replace").strip() or str(exc)
+        detail = getattr(exc, "stderr", b"").decode(errors="replace").strip() or str(exc)
         raise CheckoutError(f"{checkout.name}: jj log failed: {detail}") from exc
+    return result.stdout.decode().strip()
 
 
 def _require_pinned(checkout: Checkout, revision: str) -> None:
