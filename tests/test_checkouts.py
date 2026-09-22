@@ -100,6 +100,34 @@ def test_jj_checkout_reports_working_copy_commit_not_git_head(tmp_path: Path):
 
 
 @needs_jj
+def test_jj_checkout_revision_ignores_a_stderr_notice_from_jj(tmp_path: Path):
+    # A colocated jj/git repo prints an informational notice to stderr, not stdout, the
+    # next time jj runs after something touches the underlying git refs directly (a bare
+    # git command, GitButler, another process). That notice must not corrupt the
+    # commit id `doctor` reports.
+    subprocess.run(["jj", "git", "init", "--colocate", str(tmp_path)], check=True, capture_output=True)
+    (tmp_path / "file").write_text("one")
+    subprocess.run(["jj", "-R", str(tmp_path), "describe", "-m", "first"], check=True, capture_output=True)
+    tip = subprocess.check_output(
+        ["jj", "-R", str(tmp_path), "log", "-r", "@", "--no-graph", "-T", "commit_id"], text=True
+    ).strip()
+    # A plain git branch pointed at the working-copy commit's own git object touches the
+    # underlying git refs without going through jj (and without moving @, unlike a git
+    # commit on the tracked branch, which jj would legitimately rebase @ onto). This is
+    # what makes jj print the notice below on its next invocation.
+    subprocess.run(["git", "-C", str(tmp_path), "branch", "touched-by-git", tip], check=True)
+    notice = subprocess.run(
+        ["jj", "-R", str(tmp_path), "log", "-r", "@", "--no-graph", "-T", "commit_id"],
+        capture_output=True,
+    ).stderr
+    assert notice, "fixture did not reproduce jj's stderr notice; adjust the setup"
+
+    state = inspect_checkout(Checkout("silent-pay", tmp_path))
+
+    assert state.revision == tip
+
+
+@needs_jj
 def test_jj_checkout_revision_changes_with_the_working_copy(tmp_path: Path):
     _jj_repo(tmp_path)
     first = inspect_checkout(Checkout("silent-pay", tmp_path)).revision
