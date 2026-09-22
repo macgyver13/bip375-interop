@@ -88,8 +88,8 @@ checkouts are unaffected):
 
 | Checkout | Commit | How it was chosen |
 |---|---|---|
-| silent-pay | `43dc64e923b337341e2d92d6674b7660d245bba7` | `musig2-jade-cc-interop` bookmark; the name is conflicted between local/git/origin, resolved to jj's one non-hidden candidate |
-| coldcard-firmware | `89d5a4ed428c1ad08910a5985d60953429418dff` | `musig_silentpayments` bookmark |
+| silent-pay | `7761df1edfbb2b8237608208e625dd7bd7fb9a62` | `musig2-jade-cc-interop` resolved to `43dc64e923b3`, which predates `build_round1` (added by the very next commit, `bbe99ee93e1c`) and could not run the MuSig2-SP legs at all; moved to `uln`/`7761df1edfbb`, a direct descendant of `bbe99ee93e1c` that also touches `build_round1.rs` for derive-then-aggregate |
+| coldcard-firmware | `80a27ae5326fc703de4c9372285dadef9152047b` | `musig_silentpayments` resolved to `89d5a4ed428c`, one commit behind a fix (`WIP: fix (SP): retain explicit sighash when PSBT has SP outputs`) already on the live tip; that gap reintroduced `contribution omits input 0 sighash_type (03)` across nearly every coldcard-backed BIP-375 scenario in a check run at the bookmark commit, so moved to the live tip instead |
 | spdk | `6e26856c58981efa956cb85773c56c80d91bb81b` | `musig2-working` bookmark |
 | jade | `521cdcaddb5e014892e13c8576b7f8b7ec7deb92` | current cleaned applied-stack tip (group 8 parent-tip pin), not historically reconstructed |
 | bitsaga-seedsigner | `a41ff4467a3943ff2f319c4072e95d104922e702` | current cleaned applied-stack tip; no working end-to-end scenario ever anchored a baseline for this checkout |
@@ -120,11 +120,118 @@ use their live path, since their group-8 pin already reads a real branch tip rat
 the moving GitButler workspace commit; a worktree is only needed where the vcs itself
 (`jj`) resists pinning that live path.
 
-Still open: rerun `check --project harness --exhaustive` plus the two `musig2-regtest`
-legs against this pin to get the actual baseline report and classify the four
+Ran `check --project harness --exhaustive` against this pin to get the actual baseline report and classify the four
 `unclassified` scenarios. `bip375-test-generator` and `bitsaga-seedsigner` are pinned
 with no verified-good anchor behind them; treat their entries as "current, unverified,"
 not as evidence of correctness.
+
+### Baseline results (2026-09-22)
+
+`check --project harness --exhaustive` against the corrected pin:
+[artifacts/batches/20260922T124419.356352Z-harness-144b285c/](../artifacts/batches/20260922T124419.356352Z-harness-144b285c/report.html)
+
+| Label | Count | Notes |
+|---|---|---|
+| STEADY | 19 | matches its expectation, unchanged |
+| CHANGED | 5 | the coldcard scenarios that failed at the wrong (`musig_silentpayments`) pin now pass, recovering after the pin correction above; not a regression |
+| UNCLASSIFIED | 4 | `bip376-jade-two-way-sp-spend-to-p2tr`, `bip376-jade-two-way-sp-spend-to-p2wpkh`, `bip376-seedsigner-jade-sp-spend-to-p2tr`, `bip376-seedsigner-jade-sp-spend-to-p2wpkh`, the same four flagged since 2026-09-18; still not triaged |
+| NOT-RUN | 2 | the two MuSig2-SP scenarios (no `--psbt` bound in this run; verified separately below) |
+
+No REGRESSION, no NEW. `check` exits 1 solely because of the four UNCLASSIFIED entries,
+per the `FAILING_LABELS` decision above.
+
+MuSig2-SP legs, run separately against `baseline/interop.yaml` with a round-1 PSBT from
+`silent-pay-baseline`:
+
+| Scenario | Architecture | Txid | Result |
+|---|---|---|---|
+| `musig2-sp-coldcard-jade-two-way` | aggregate-then-derive | `d0d17994b34d9e046ebbc6aa0e8349385c33ee10a9a931da6c725c3b84732fbb` | finalized, broadcast, confirmed, recipient output found on-chain |
+| `musig2-sp-jade-derive-first-two-way` | derive-then-aggregate | `b08fb44886d477d34d55d44addfbfdf6b09c7b880f42359adcc66052333a08b1` | finalized, broadcast, confirmed, recipient output found on-chain |
+
+The first leg's txid is identical to an earlier, unpinned manual run in this same
+session, which is a good sign of determinism given the same wallet seeds and treasury.
+
+### rust-psbt: an undeclared fourth pin
+
+`silent-pay` and `spdk`'s `psbt` crate both depend on the same private `rust-psbt` fork.
+Building `silent-pay-baseline` against `spdk-baseline` failed with two different
+resolved copies of `psbt_v2::Output` in the same dependency graph: `silent-pay` fetches
+a floating git branch (`musig2-working-rebase-sosthene`) directly, while `spdk`
+overrides its own equivalent dependency to a local path
+(`[patch]` to `/Users/macgyver/src/rust-psbt`). At the time this baseline was built, the
+live `silent-pay` and `spdk` tips did not compile against each other at all (`spdk` had
+renamed `SilentPaymentAddress` to `SilentPaymentCode`); this is an active, in-progress
+break between those two repos, unrelated to which commit is pinned.
+
+Pinned: `rust-psbt` at `8af0fc273aec642dfc0165779a2b86a30ccfcdf1` (jj change `xmy`), in a
+frozen worktree at `/Users/macgyver/src/rust-psbt-baseline`, same reasoning as the other
+three (the live checkout was dirty with unrelated work at the time). This pin lives
+outside `interop.lock`'s schema, which only covers `interop.yaml`'s nine named
+checkouts and has no concept of a checkout's own transitive dependencies; recorded here
+instead. A future improvement could extend the lock schema to cover named transitive
+pins like this one, if MuSig2-SP legs are run against the baseline routinely enough to
+need it versioned rather than written down once.
+
+To make the build actually resolve to the pinned worktrees instead of the live,
+moving checkouts, `spdk-baseline/Cargo.toml`'s `[patch]` path was repointed at
+`rust-psbt-baseline`, and `silent-pay-baseline/Cargo.toml` gained a matching `[patch]`
+section, since both `silent-pay` and `silent-pay-baseline` hardcode absolute paths to
+the *live* `spdk` checkout for the `psbt` and `silentpayments` crates
+(`psbt = { path = "/Users/macgyver/src/spdk/psbt" }`, both in the root and in
+`demo/Cargo.toml`); those were also repointed at `spdk-baseline`, and `Cargo.lock` was
+regenerated. These are real, necessary content changes to the pinned worktrees, not
+build byproducts like coldcard's bech32 patch, so `silent-pay-baseline` and
+`spdk-baseline` now report dirty for a different, equally load-bearing reason:
+reproducing the MuSig2-SP legs from this pin requires reapplying the same three patches
+(`silent-pay-baseline`'s two path overrides plus its new `[patch]` section,
+`spdk-baseline`'s repointed `[patch]` path) and regenerating `Cargo.lock`, in addition to
+`--allow-dirty` for coldcard's bech32 exception. `pin` itself needs the same dirty
+checkouts temporarily reverted first, since it refuses dirty checkouts regardless of
+`--allow-dirty` (as does coldcard's bech32 patch, for the same reason).
+
+A real fix belongs upstream: `silent-pay` and `spdk` hardcoding each other's and
+`rust-psbt`'s *live* absolute paths means no worktree- or commit-based pin of either
+can ever be reproduced without editing that path, and a floating git branch dependency
+(no pinned `rev`) means two crates that both depend on it can silently diverge, as they
+did here. Worth raising with the user rather than fixing unilaterally, since it touches
+their build configuration across two repos.
+
+### coldcard-firmware-baseline build
+
+The coldcard worktree needed its `ENV` and simulator built from scratch (a fresh
+`git worktree` has no build output, and `adapters/coldcard.py`'s own `doctor()` check for
+this is never called by `check`'s preflight (filed as a gap below). Built following the
+macOS section of coldcard-firmware's README:
+
+```bash
+git submodule update --init external/ckcc-protocol external/libngu external/micropython external/mpy-qr
+# each of the above may itself need a nested submodule; git clone the LIVE checkout's
+# already-fetched copy locally if the exact pinned commit isn't reachable from the
+# submodule's own remote (this happened for ckcc-protocol at this pin)
+python3 -m venv ENV && source ENV/bin/activate && pip install -U pip setuptools
+pip install -r requirements.txt
+export MPY_CFLAGS='-Wno-unused-but-set-variable -Wno-array-bounds -Wno-error=unknown-warning-option -Wno-error=deprecated-non-prototype -Wno-error=bitwise-instead-of-logical -Wno-unterminated-string-initialization -Wno-gnu-folding-constant'
+make -C external/micropython/mpy-cross CFLAGS_EXTRA="$MPY_CFLAGS"
+cd unix && make setup CFLAGS_EXTRA="$MPY_CFLAGS" && make ngu-setup && make CFLAGS_EXTRA="$MPY_CFLAGS"
+```
+
+`libngu`'s `Makefile` applies `bech32.patch` to the vendored `bech32` submodule during
+`ngu-setup` and never commits it (`BECH32_PATCH ?= cd libs/bech32; git apply
+../../bech32.patch || true`). Confirmed the live checkout carries the identical
+uncommitted diff. This makes any correctly-built coldcard-firmware checkout report
+dirty via plain `git status`, harmlessly and reproducibly, so the baseline check for
+`--project harness` needs `--allow-dirty` specifically for this. Not a real
+reproducibility gap; a documented codebase quirk, closer to the runbook's existing
+"Known gotchas" than to an unpinned checkout.
+
+### Gap found: preflight does not call an adapter's own `doctor()`
+
+`adapters/coldcard.py.doctor()` already detects a missing `ENV`, but nothing in
+`preflight.py` calls it before a worker starts, so a missing backend build crashes the
+whole batch with a raw `FileNotFoundError` (per the "hard crash preferred" decision,
+uncaught) instead of a clean preflight message naming the missing build. Worth fixing:
+`run_preflight` should call `.doctor()` on each backend an actually-runnable scenario
+needs, alongside the checkout and embit checks it already does.
 
 ### Phase 1 progress
 
