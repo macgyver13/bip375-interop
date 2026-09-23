@@ -249,10 +249,12 @@ around.
 
 Independent implementations that never sign and never join a round -- they re-check a
 run's own PSBT snapshots after the real signers are done. A scenario opts in with
-`validators: [caravan]` / `validators: [spdk]` (or both); `check --exhaustive` forces
-every `bip375`-suite scenario to run with all of `KNOWN_VALIDATORS`
-(`src/bip375_interop/models.py`) regardless of what it declares. Currently opt-in only,
-via the two dedicated scenarios below -- no existing scenario runs both.
+`validators: [caravan]` / `validators: [spdk]` (or both). `check --exhaustive` and
+`check --release` force every `bip375`-suite scenario to run with all of
+`KNOWN_VALIDATORS` (`src/bip375_interop/models.py`) regardless of what it declares.
+`check --release` also runs both MuSig2 regtest architectures and fails unless each
+script prints `PASS`. A missing Caravan dist or `spdk-cli` binary is a preflight
+error, not a skipped validator. Opt-in scenarios are the two dedicated cases below.
 
 ### `bip375-caravan-coldcard-jade-two-way` -- working
 

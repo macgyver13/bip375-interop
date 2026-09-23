@@ -117,6 +117,13 @@ def _parser() -> argparse.ArgumentParser:
         "--exhaustive", action="store_true",
         help="also run every independent validator (e.g. caravan, spdk) on each bip375 scenario",
     )
+    check.add_argument(
+        "--release", action="store_true",
+        help=(
+            "release gate: Caravan and SPDK on every bip375 scenario, "
+            "and both MuSig2 regtest architectures"
+        ),
+    )
     check.add_argument("--scenarios-dir", type=Path, default=Path("scenarios"))
     check.add_argument("--since", default="HEAD", help="Git revision used to inspect local changes")
     check.add_argument(
@@ -186,8 +193,15 @@ def _run_validators(config, scenario, run_artifacts) -> list[dict]:
         state = inspect_checkout(checkout, config.allow_dirty)
         adapter_cls = _VALIDATOR_ADAPTERS[name]
         snapshots = sorted(run_artifacts.path.glob(adapter_cls.snapshot_glob))
+        if not snapshots:
+            raise InteropError(f"{name}: no snapshots matched {adapter_cls.snapshot_glob}")
         results = adapter_cls(checkout.path).validate(snapshots)
-        records.append({"name": name, "checkout": asdict(state), "validated": len(results)})
+        records.append({
+            "name": name,
+            "checkout": asdict(state),
+            "snapshots": len(snapshots),
+            "validated": len(results),
+        })
     return records
 
 
@@ -195,6 +209,97 @@ def _verification_fields(scenario, repairs=()) -> dict:
     claim = run_claim(scenario, repairs=repairs, generated=True)
     return {key: claim[key] for key in ("verification_scope", "reason") if key in claim}
 
+
+
+def _manifest_claim(scenario, repairs=(), validators=()) -> dict:
+    from .verification import manifest_claim_fields
+
+    return manifest_claim_fields(scenario, repairs, validators)
+
+
+MUSIG2_RELEASE_ARCHITECTURES = ("aggregate-then-derive", "derive-then-aggregate")
+_MUSIG2_SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "musig2-regtest.sh"
+
+
+def musig2_pass_line(output: str) -> str | None:
+    """The script's PASS line, if it printed one. Any other output does not count."""
+
+    for line in output.splitlines():
+        stripped = line.strip()
+        if stripped == "PASS" or stripped.startswith("PASS "):
+            return stripped
+    return None
+
+
+def musig2_leg_result(architecture: str, stdout: str, returncode: int) -> dict:
+    line = musig2_pass_line(stdout)
+    return {
+        "architecture": architecture,
+        "passed": bool(line) and returncode == 0,
+        "line": line,
+    }
+
+
+def release_legs_ok(legs) -> bool:
+    """True only when each key architecture printed PASS."""
+
+    if not legs or len(legs) != len(MUSIG2_RELEASE_ARCHITECTURES):
+        return False
+    by_arch = {leg.get("architecture"): leg for leg in legs}
+    if set(by_arch) != set(MUSIG2_RELEASE_ARCHITECTURES):
+        return False
+    return all(
+        leg.get("passed") and isinstance(leg.get("line"), str) and leg["line"].startswith("PASS")
+        for leg in by_arch.values()
+    )
+
+
+def attach_musig2_legs(summary: dict, legs) -> dict:
+    """Attach leg results, or refuse a release summary that never ran them."""
+
+    if not legs:
+        raise InteropError(
+            "refusing to emit a release summary: MuSig2 regtest legs were not run"
+        )
+    return {**summary, "musig2_legs": legs}
+
+
+def invoke_musig2_release(script: Path | None = None, runner=None, config: Path | None = None) -> list[dict]:
+    """Run both MuSig2 key architectures. A leg counts only when it prints PASS."""
+
+    import os
+    import subprocess
+
+    script = _MUSIG2_SCRIPT if script is None else script
+    if not script.is_file():
+        raise InteropError(f"musig2 release script is missing: {script}")
+    if runner is None:
+        runner = subprocess.run
+    env = os.environ.copy()
+    if config is not None:
+        env["CONFIG"] = str(config)
+    legs = []
+    for architecture in MUSIG2_RELEASE_ARCHITECTURES:
+        result = runner(
+            [str(script), architecture],
+            capture_output=True,
+            text=True,
+            check=False,
+            env=env,
+        )
+        stdout = result.stdout if isinstance(result.stdout, str) else ""
+        legs.append(musig2_leg_result(architecture, stdout, result.returncode))
+    return legs
+
+
+def attach_bip375_validators(entries, validators=KNOWN_VALIDATORS):
+    """Attach validators to bip375 scenarios. Does not rewrite weak modes."""
+
+    return tuple(
+        replace(entry, scenario=replace(entry.scenario, validators=tuple(validators)))
+        if entry.scenario.suite == "bip375" else entry
+        for entry in entries
+    )
 
 def _recorded_repairs(manifest: Path) -> list:
     payload = json.loads(manifest.read_text())
@@ -206,27 +311,29 @@ def case_result_for_run(scenario, manifest: Path, *, generated: bool) -> CaseRes
     """Batch row for a finished run. A weak mode is not ``passed``."""
 
     repairs = _recorded_repairs(manifest)
-    return CaseResult(
-        scenario.name,
-        check_case_status(scenario, generated=generated, repairs=repairs),
-        check_case_reason(scenario, generated=generated, repairs=repairs),
-        str(manifest),
-    )
+    payload = json.loads(manifest.read_text())
+    status = check_case_status(scenario, generated=generated, repairs=repairs)
+    reason = check_case_reason(scenario, generated=generated, repairs=repairs)
+    if payload.get("verification_scope") == "not-evidence":
+        status = "completed"
+        reason = payload.get("reason") or reason
+    return CaseResult(scenario.name, status, reason, str(manifest))
 
 
 def run_summary(final_psbt: Path, manifest: Path, size: int) -> dict:
     """CLI summary. The scope label sits beside the artifact path."""
 
     payload = json.loads(manifest.read_text())
+    summary = {"final_psbt": str(final_psbt)}
     scope = payload.get("verification_scope")
-    if not scope:
-        return {"final_psbt": str(final_psbt), "manifest": str(manifest), "bytes": size}
-    return {
-        "final_psbt": str(final_psbt),
-        "verification_scope": scope,
-        "manifest": str(manifest),
-        "bytes": size,
-    }
+    if scope:
+        summary["verification_scope"] = scope
+    independent = payload.get("independent_check")
+    if independent:
+        summary["independent_check"] = independent
+    summary["manifest"] = str(manifest)
+    summary["bytes"] = size
+    return summary
 
 
 def _with_utxo_source(payload: dict, utxo_source: str | None) -> dict:
@@ -242,6 +349,7 @@ def _run_generated_scenario(config, scenario, signer_order: tuple[str, ...] | No
     workers, states = {}, []
     utxo_source = None
     repairs: tuple = ()
+    validators = ()
     try:
         workers, states = _start_workers(config, scenario, run_artifacts)
         initial_psbt = build_bip375_fixture(scenario)
@@ -264,7 +372,7 @@ def _run_generated_scenario(config, scenario, signer_order: tuple[str, ...] | No
             "merge_policy": scenario.merge_policy,
             "repairs": list(repairs),
             "validators": validators,
-            **_verification_fields(scenario, repairs),
+            **_manifest_claim(scenario, repairs, validators),
         }, utxo_source))
         return run_artifacts.path / "final.psbt", manifest, len(final_psbt)
     except Exception as exc:
@@ -274,7 +382,7 @@ def _run_generated_scenario(config, scenario, signer_order: tuple[str, ...] | No
             "status": "failed",
             "error": str(exc),
             "checkouts": [asdict(state) for state in states],
-            **_verification_fields(scenario, repairs),
+            **_manifest_claim(scenario, repairs, validators),
         }, utxo_source))
         raise
     finally:
@@ -291,6 +399,7 @@ def _run_psbt_scenario(
     workers, states = {}, []
     utxo_source = None
     repairs: tuple = ()
+    validators = ()
     try:
         suite_config = get_suite(scenario.suite).validate(scenario)
         descriptor = None
@@ -329,7 +438,7 @@ def _run_psbt_scenario(
             "merge_policy": scenario.merge_policy,
             "repairs": list(repairs),
             "validators": validators,
-            **_verification_fields(scenario, repairs),
+            **_manifest_claim(scenario, repairs, validators),
         }, utxo_source))
         return run_artifacts.path / "final.psbt", manifest, len(final_psbt)
     except Exception as exc:
@@ -339,7 +448,7 @@ def _run_psbt_scenario(
             "status": "failed",
             "error": str(exc),
             "checkouts": [asdict(state) for state in states],
-            **_verification_fields(scenario, repairs),
+            **_manifest_claim(scenario, repairs, validators),
         }, utxo_source))
         raise
     finally:
@@ -408,12 +517,8 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.command == "check":
             entries = select(discover(args.scenarios_dir), args.project)
-            if args.exhaustive:
-                entries = tuple(
-                    replace(entry, scenario=replace(entry.scenario, validators=KNOWN_VALIDATORS))
-                    if entry.scenario.suite == "bip375" else entry
-                    for entry in entries
-                )
+            if args.exhaustive or args.release:
+                entries = attach_bip375_validators(entries)
             bindings = _psbt_bindings(args.psbt)
             selected_names = {entry.scenario.name for entry in entries}
             unknown = sorted(bindings.keys() - selected_names)
@@ -503,7 +608,14 @@ def main(argv: list[str] | None = None) -> int:
                 summary["variances"] = {
                     name: label for name, label in labels.items() if label != STEADY
                 }
+            if args.release:
+                summary = attach_musig2_legs(summary, invoke_musig2_release(config=args.config))
+                legs_ok = release_legs_ok(summary["musig2_legs"])
+            else:
+                legs_ok = True
             print(json.dumps(summary, indent=2))
+            if not legs_ok:
+                return 1
             if not required:
                 print("every selected scenario was blocked; nothing was actually verified", file=sys.stderr)
                 return 1

@@ -668,12 +668,13 @@ def _not_evidence_reason(scenario: Scenario) -> str:
 def run_claim(
     scenario: Scenario, *, repairs: Sequence[object] = (), generated: bool,
 ) -> dict[str, str]:
-    """What a completed run may claim. Never ``evidence``.
+    """What a completed run may claim. This function never returns ``evidence``.
 
     ``verification: structural``, ``merge_policy: combiner``, and any recorded
     repair are ``not-evidence`` and are not a pass. MuSig2 record counts stay
     ``interop-only``. A bip375 run that does not declare inputs and outputs is
-    ``interop-only`` with reason ``consistency-only``.
+    ``interop-only`` with reason ``consistency-only``. ``evidence`` is written
+    only by ``manifest_claim_fields`` after the release-gate validators ran.
     """
 
     if _not_evidence(scenario, repairs):
@@ -726,3 +727,48 @@ def check_case_reason(
     """Reason recorded beside ``check_case_status``."""
 
     return run_claim(scenario, repairs=repairs, generated=generated).get("reason")
+
+
+def manifest_claim_fields(
+    scenario: Scenario,
+    repairs: Sequence[object] = (),
+    validator_records: Sequence = (),
+) -> dict[str, str]:
+    """Scope fields for a run manifest.
+
+    ``evidence`` only when the scenario is full, strict, intent-declaring
+    bip375 and both release-gate validators checked at least one snapshot.
+    A full intent-bound bip375 run with no validator records is
+    ``not-evidence`` with reason ``validator-skipped``. Structural, combiner,
+    and MuSig2 claims keep their existing reasons.
+    """
+
+    from .models import KNOWN_VALIDATORS
+
+    fields = _scope_fields(run_claim(scenario, repairs=repairs, generated=True))
+    records = list(validator_records)
+    if not records:
+        fields["independent_check"] = "not-run"
+        if "verification_scope" not in fields:
+            fields["verification_scope"] = "not-evidence"
+            fields["reason"] = "validator-skipped"
+        return fields
+    if fields.get("verification_scope") in {"not-evidence", "interop-only"}:
+        fields["independent_check"] = "ran"
+        return fields
+    snapshots = {
+        str(item["name"]): int(item.get("snapshots", item.get("validated", 0)))
+        for item in records
+    }
+    release_ran = all(snapshots.get(name, 0) > 0 for name in KNOWN_VALIDATORS)
+    if (
+        release_ran
+        and scenario.suite == "bip375"
+        and scenario.verification == "full"
+        and scenario.merge_policy == "strict"
+        and not repairs
+        and declares_intent(scenario)
+    ):
+        return {"verification_scope": "evidence", "independent_check": "ran"}
+    fields["independent_check"] = "ran"
+    return fields

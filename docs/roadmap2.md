@@ -166,7 +166,16 @@ Acceptance: a forced omission names the signer in the exception string.
 
 ## D. Release gate
 
-Independent review is not the default path. `validators:` is per scenario. Two scenarios opt in, each to one validator. `check --exhaustive` attaches both for `bip375` only, and only when that flag is passed. `models.py` rejects validators on `musig2-sp`. SPDK's `snapshot_glob` is `final.psbt`. Caravan's is `*.psbt`.
+Landed on `release-gate`. `check --release` attaches Caravan and SPDK to every
+bip375 scenario without editing YAML. A missing Caravan dist or `spdk-cli`
+binary is a preflight error. The run manifest lists the validators, each
+snapshot count, and `verification_scope: evidence` only when those validators
+ran on a full, strict, intent-bound bip375 run. A skipped independent check is
+`independent_check: not-run` and cannot be evidence. Structural and combiner
+runs stay `not-evidence`. The command runs both MuSig2 key architectures
+through `scripts/musig2-regtest.sh` and fails unless each prints `PASS`.
+
+Independent review is not the default path. `validators:` is per scenario. Two scenarios opt in, each to one validator. `check --exhaustive` attaches both for `bip375` only, and only when that flag is passed. `check --release` is the profile that always attaches both and runs the regtest legs. `models.py` rejects validators on `musig2-sp`. SPDK's `snapshot_glob` is `final.psbt`. Caravan's is `*.psbt`.
 
 ### D1. `check --release`
 

@@ -190,11 +190,12 @@ Per-scenario status, findings and the manual MuSig2-SP recipe are in
   worker and declaring its own build/test/native-suite commands. `coldcard_worker.py`
   is the native-suite variant (Milestone 1): runs a backend's own upstream test suite
   in a disposable checkout copy rather than the persistent PSBT protocol.
-- **Validators** -- independent implementations that never sign but re-check every
-  PSBT snapshot a run wrote. `adapters/caravan.py` runs Caravan's TypeScript `PsbtV2`
-  parser (`caravan_validate.cjs`) against each snapshot. Validators are opt-in: a
-  scenario lists them under `validators:`, `check --exhaustive` enables them for every
-  bip375 scenario, and `check --project caravan` selects the scenarios that name it.
+- **Validators** -- Caravan and SPDK re-check PSBT snapshots and never sign.
+  They are the release-gate validators. A scenario may list them under
+  `validators:`, `check --exhaustive` attaches both to every bip375 scenario,
+  and `check --release` does that and also runs both MuSig2 regtest
+  architectures. `check --project caravan` selects the scenarios that name it.
+  `verify_bip375_completion` is not this check: it uses embit.
 - **`treasury.py`** / **`fixtures.py`** -- PSBT/descriptor construction. `treasury.py`
   derives a shared MuSig2 treasury descriptor from the harness's own published test
   seeds (`test_seeds.py`), in either key architecture -- **aggregate-then-derive**
@@ -270,9 +271,21 @@ flowchart TD
 ## Design boundaries
 
 Scenario YAML contains common signer/input/output intent and a suite-specific block.
-Adapters own device lifecycle and transport. Suites own round sequencing and protocol
-verification. MuSig2 nonce handling and descriptor rules therefore do not leak into the
-plain BIP-375 or future FROST suites.
+Adapters own device lifecycle and transport. Coldcard's per-PSBT path is
+`coldcard_psbt_worker.py`. Mixed Coldcard/Jade runs are in the scenario catalog;
+they are not future work. Suites own round sequencing and protocol verification.
+MuSig2 nonce handling and descriptor rules therefore do not leak into the plain
+BIP-375 or future FROST suites.
+
+A run manifest records `verification_scope`. Three labels, and only these:
+
+| Scope | Meaning | Implemented by |
+|---|---|---|
+| `evidence` | Full bip375 crypto checks ran, scenario intent was bound, and both release-gate validators checked snapshots. | `verify_bip375_completion` (embit: `derive_sp_outputs`, `schnorr_verify`, `verify_dleq_proof`) plus intent binding in that function, then Caravan (`adapters/caravan.py`, every `*.psbt`) and SPDK (`adapters/spdk.py`, `final.psbt`, rust-psbt). Written only when those validators ran. |
+| `interop-only` | The round completed, but this process did not bind scenario intent (`consistency-only`) or did not check MuSig2 aggregation (`structural-musig2`). | `run_claim` / `verify_musig2_sp_completion` count `0x1b` / `0x1c` records only. Aggregation, broadcast, and the on-chain scan are `scripts/musig2-regtest.sh` (silent-pay), which `check --release` runs for both key architectures. A leg counts only when that script prints `PASS`. |
+| `not-evidence` | `verification: structural`, `merge_policy: combiner` or a recorded repair, or a skipped validator. Not a pass. | `run_claim`. A tight `run` / `run-generated` loop may skip validators; the manifest then says `independent_check: not-run` and the scope is not `evidence`. |
+
+embit is a second implementation relative to Coldcard and Jade firmware. It is not Caravan and it is not rust-psbt. Do not read a harness completion check as an independent oracle unless the release-gate validators ran.
 
 Each run writes an isolated artifact directory containing the input and output from every
 signer, semantic checks, logs, and a hash manifest. Native checkout paths are inputs, not

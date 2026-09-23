@@ -4,7 +4,8 @@
 #
 # usage: scripts/musig2-regtest.sh [aggregate-then-derive|derive-then-aggregate]
 # env:   BITCOIND, BITCOIN_CLI   binaries (default: on PATH)
-#        SILENT_PAY              silent-pay checkout (default: from interop.yaml)
+#        CONFIG                  harness config (default: $ROOT/interop.yaml)
+#        SILENT_PAY              silent-pay checkout (default: from CONFIG)
 #        RPC_PORT                regtest RPC port (default 18999)
 #        ALLOW_DIRTY=1           pass --allow-dirty to the harness
 #        WORK_DIR                keep scratch files here (default: a new temp dir)
@@ -22,6 +23,7 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd)
 BITCOIND=${BITCOIND:-bitcoind}
 BITCOIN_CLI=${BITCOIN_CLI:-bitcoin-cli}
 RPC_PORT=${RPC_PORT:-18999}
+CONFIG=${CONFIG:-$ROOT/interop.yaml}
 WORK=${WORK_DIR:-$(mktemp -d)}
 DATADIR="$WORK/node"
 COOKIE="$DATADIR/regtest/.cookie"
@@ -31,14 +33,14 @@ for bin in "$BITCOIND" "$BITCOIN_CLI"; do
   command -v "$bin" >/dev/null || { echo "$bin not found; set BITCOIND / BITCOIN_CLI" >&2; exit 2; }
 done
 
-SILENT_PAY=${SILENT_PAY:-$(python3 - "$ROOT/interop.yaml" <<'PY'
+SILENT_PAY=${SILENT_PAY:-$(python3 - "$CONFIG" <<'PY'
 import sys, yaml
 print(yaml.safe_load(open(sys.argv[1]))["checkouts"]["silent-pay"]["path"])
 PY
 )}
 
 harness() {
-  PYTHONPATH="$ROOT/src" python3 -m bip375_interop.cli ${ALLOW_DIRTY:+--allow-dirty} "$@"
+  PYTHONPATH="$ROOT/src" python3 -m bip375_interop.cli --config "$CONFIG" ${ALLOW_DIRTY:+--allow-dirty} "$@"
 }
 sp_demo() {
   local bin=$1; shift
