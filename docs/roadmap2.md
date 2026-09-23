@@ -76,7 +76,14 @@ Acceptance: a musig2 run whose record counts match still cannot produce `status:
 
 ## B. Bind intent, and do not trust signer-supplied metadata
 
-Consistency with fields already inside the PSBT is not scenario intent. `expected_sp_output_script` reads recipient scan/spend keys from `PSBT_OUT_SP_V0_INFO` and outpoints from the inputs. `verify_bip375_completion` checks `len(parsed.inputs) == len(scenario.inputs)` and nothing else against `scenario.outputs`. `fixtures.py` ignores `recipient_id` and always writes `_SCAN_HEX` / `_SPEND_HEX`.
+Landed on `psbt-bind-intent`. A run refuses to start unless every input already
+carries a UTXO, and records `utxo_source` (`declared` or `non_witness_utxo`).
+Completion binds counts, script types, amounts, `recipient_id`, and plain
+scripts. A signer who adds a security-relevant field outside the phase's
+allow list fails by name, including during `resolve-sign` and `sign`.
+Proprietary fields still merge.
+
+Consistency with fields already inside the PSBT is not scenario intent. `expected_sp_output_script` still recomputes from the PSBT's own recipient keys; completion now also requires those keys, counts, types, and amounts to match the scenario. `fixtures.py` resolves `recipient_id` through the same table.
 
 ### B1. Refuse a signer-added witness UTXO
 
