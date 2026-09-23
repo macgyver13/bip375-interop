@@ -9,6 +9,8 @@ generator's own generation-time conventions.
 
 from __future__ import annotations
 
+from binascii import unhexlify
+
 from .errors import InteropError
 from .models import Scenario
 from .psbt_maps import PsbtV2, parse_psbt
@@ -31,6 +33,21 @@ _MUSIG2_PARTIAL_SIG = 0x1C
 
 _INPUTS_MODIFIABLE = 0x01
 _OUTPUTS_MODIFIABLE = 0x02
+_RECIPIENTS = {
+    "recipient-a": (
+        unhexlify("027a487fc19fb769877b8742d6ea18118f3c4e72b1ea8c6de602a7ad4a41dbe068"),
+        unhexlify("0361e1b1e9de5e42cb2007f7ca54b9e0d57ed13938fad56d3f19e57513a8fce039"),
+    ),
+    "recipient-b": (
+        unhexlify("034f355bdcb7cc0af728ef3cceb9615d90684bb5b2ca5f859ab0f0b704075871aa"),
+        unhexlify("02466d7fcae563e5cb09a0d1870bb580344804617879a14949cf22285f1bae3f27"),
+    ),
+}
+_PLAIN_DEST_PUBKEY = unhexlify(
+    "0230282f721a0742d05986818c9cbd71757394d4c6602cd6814d5647e50b57e28c"
+)
+
+
 
 
 def _check_tx_modifiable(parsed: PsbtV2) -> None:
@@ -328,10 +345,219 @@ def _verify_bip375_structural(scenario: Scenario, psbt: bytes) -> None:
     _check_tx_modifiable(parsed)
 
 
-def verify_bip375_completion(scenario: Scenario, psbt: bytes) -> None:
-    """Check a generated bip375 PSBT against the scenario seeds.
+def declares_intent(scenario: Scenario) -> bool:
+    """True when the scenario names both inputs and outputs."""
 
-    Checks each Silent Payment output script, per-input ECDH share and DLEQ
+    return bool(scenario.inputs) and bool(scenario.outputs)
+
+
+def recipient_keys(recipient_id: str) -> tuple[bytes, bytes]:
+    """Scan and spend keys for a named recipient. Unknown ids raise KeyError."""
+
+    try:
+        return _RECIPIENTS[recipient_id]
+    except KeyError:
+        raise KeyError(recipient_id) from None
+
+
+def known_recipient_ids() -> tuple[str, ...]:
+    return tuple(sorted(_RECIPIENTS))
+
+
+def recipient_sp_info(recipient_id: str) -> bytes:
+    """66-byte scan||spend a Silent Payment output must carry for this recipient."""
+
+    try:
+        scan, spend = _RECIPIENTS[recipient_id]
+    except KeyError:
+        raise VerificationError(f"unknown recipient_id {recipient_id!r}") from None
+    return scan + spend
+
+
+def expected_plain_output_script(output_type: str) -> bytes:
+    """Raw script the fixture writes for a plain p2wpkh or p2tr output."""
+
+    from embit import ec, script
+
+    pubkey = ec.PublicKey.parse(_PLAIN_DEST_PUBKEY)
+    if output_type == "p2wpkh":
+        return script.p2wpkh(pubkey).data
+    if output_type == "p2tr":
+        return script.p2tr(pubkey).data
+    raise VerificationError(f"no plain output script for type {output_type!r}")
+
+
+def require_input_utxos(psbt: bytes) -> str:
+    """Require every input to already carry a UTXO before any signer runs.
+
+    Callers invoke this before ``run_rounds``. An input may carry
+    ``witness_utxo``, ``non_witness_utxo``, or both. Both must agree: the
+    embedded transaction's txid matches ``previous_txid``, and the output at
+    ``output_index`` matches ``witness_utxo`` when that field is also present.
+    Returns ``declared`` when any input has only ``witness_utxo``. Returns
+    ``non_witness_utxo`` when every input was checked against its embedded
+    transaction. Never claims a prevout was fetched from a node.
+    """
+
+    parsed = parse_psbt(psbt)
+    if not parsed.inputs:
+        raise VerificationError("PSBT has no inputs to check for a UTXO")
+    declared_only = False
+    for index, item in enumerate(parsed.inputs):
+        witness = item.get(b"\x01")
+        non_witness = item.get(b"\x00")
+        if witness is None and non_witness is None:
+            raise VerificationError(
+                f"input {index} is missing witness_utxo and non_witness_utxo"
+            )
+        if non_witness is not None:
+            _check_non_witness_utxo(index, item, non_witness, witness)
+        else:
+            declared_only = True
+    return "declared" if declared_only else "non_witness_utxo"
+
+
+def _check_non_witness_utxo(
+    index: int, item, raw_tx: bytes, witness: bytes | None
+) -> None:
+    from embit.transaction import Transaction
+
+    prev = item.get(b"\x0e")
+    vout_raw = item.get(b"\x0f")
+    if prev is None or vout_raw is None:
+        raise VerificationError(
+            f"input {index} is missing previous txid or output index"
+        )
+    try:
+        tx = Transaction.parse(raw_tx)
+    except Exception as exc:
+        raise VerificationError(
+            f"input {index} non_witness_utxo is not a transaction"
+        ) from exc
+    if tx.txid() != bytes(reversed(prev)):
+        raise VerificationError(
+            f"input {index} non_witness_utxo txid does not match previous_txid"
+        )
+    vout = int.from_bytes(vout_raw, "little")
+    if vout >= len(tx.vout):
+        raise VerificationError(
+            f"input {index} output index {vout} is past the non_witness_utxo outputs"
+        )
+    if witness is not None and tx.vout[vout].serialize() != witness:
+        raise VerificationError(
+            f"input {index} witness_utxo does not match non_witness_utxo output {vout}"
+        )
+
+
+def _input_txout(index: int, item):
+    from embit.transaction import Transaction, TransactionOutput
+
+    witness = item.get(b"\x01")
+    if witness is not None:
+        try:
+            return TransactionOutput.parse(witness)
+        except Exception as exc:
+            raise VerificationError(
+                f"input {index} witness_utxo is not a transaction output"
+            ) from exc
+    non_witness = item.get(b"\x00")
+    if non_witness is None:
+        raise VerificationError(f"input {index} is missing UTXO information")
+    vout_raw = item.get(b"\x0f")
+    if vout_raw is None:
+        raise VerificationError(f"input {index} is missing an output index")
+    try:
+        tx = Transaction.parse(non_witness)
+    except Exception as exc:
+        raise VerificationError(
+            f"input {index} non_witness_utxo is not a transaction"
+        ) from exc
+    vout = int.from_bytes(vout_raw, "little")
+    if vout >= len(tx.vout):
+        raise VerificationError(
+            f"input {index} output index {vout} is past the non_witness_utxo outputs"
+        )
+    return tx.vout[vout]
+
+
+def _observed_input_type(item, txout) -> str:
+    kind = txout.script_pubkey.script_type() if txout.script_pubkey is not None else None
+    if kind == "p2tr" and item.get(b"\x20") is not None:
+        return "sp-spend"
+    if kind == "p2tr":
+        return "p2tr"
+    if kind == "p2wpkh":
+        return "p2wpkh"
+    return kind or "unknown"
+
+
+def _verify_scenario_intent(scenario: Scenario, parsed: PsbtV2) -> None:
+    """Bind the final PSBT to the scenario, not to keys the PSBT already carries."""
+
+    if len(parsed.inputs) != len(scenario.inputs):
+        raise VerificationError("final PSBT input count does not match the scenario")
+    if len(parsed.outputs) != len(scenario.outputs):
+        raise VerificationError("final PSBT output count does not match the scenario")
+    for index, item in enumerate(scenario.inputs):
+        txout = _input_txout(index, parsed.inputs[index])
+        expected_type = item.get("type")
+        actual = _observed_input_type(parsed.inputs[index], txout)
+        if actual != expected_type:
+            raise VerificationError(
+                f"input {index} script type is {actual}, scenario expects {expected_type}"
+            )
+        expected_amount = item.get("amount_sat")
+        if txout.value != expected_amount:
+            raise VerificationError(
+                f"input {index} amount {txout.value} does not match "
+                f"scenario amount_sat {expected_amount}"
+            )
+    for index, item in enumerate(scenario.outputs):
+        output = parsed.outputs[index]
+        amount = int.from_bytes(output.get(b"\x03"), "little")
+        expected_amount = item.get("amount_sat")
+        if amount != expected_amount:
+            raise VerificationError(
+                f"output {index} amount {amount} does not match "
+                f"scenario amount_sat {expected_amount}"
+            )
+        output_type = item.get("type")
+        if output_type == "silent-payment":
+            recipient_id = item.get("recipient_id")
+            if not isinstance(recipient_id, str) or not recipient_id:
+                raise VerificationError(
+                    f"output {index} silent-payment output has no recipient_id"
+                )
+            expected = recipient_sp_info(recipient_id)
+            actual = output.get(b"\x09")
+            if actual != expected:
+                raise VerificationError(
+                    f"output {index} Silent Payment scan key does not match "
+                    f"recipient_id {recipient_id!r}"
+                )
+        elif output_type in {"p2wpkh", "p2tr"}:
+            actual = output.get(b"\x04")
+            expected_script = expected_plain_output_script(output_type)
+            if actual != expected_script:
+                raise VerificationError(
+                    f"output {index} script does not match the {output_type} "
+                    "script the fixture creates"
+                )
+        else:
+            raise VerificationError(
+                f"output {index} has unsupported scenario type {output_type!r}"
+            )
+
+
+def verify_bip375_completion(scenario: Scenario, psbt: bytes) -> None:
+    """Check a bip375 PSBT against the scenario.
+
+    When the scenario declares inputs and outputs, those are the intent:
+    input and output counts, each input's script type and amount, each
+    output amount, Silent Payment recipient keys from ``recipient_id``, and
+    plain output scripts. A self-consistent PSBT that pays a different
+    recipient does not pass. Then, unless ``verification`` is structural,
+    checks each Silent Payment output script, per-input ECDH share and DLEQ
     for a multi-owner per-input run, the global ECDH share and DLEQ against
     ``A_sum`` for a single-owner or global run, every P2WPKH partial
     signature (DER plus sighash byte), every taproot key signature, and that
@@ -342,6 +568,8 @@ def verify_bip375_completion(scenario: Scenario, psbt: bytes) -> None:
     modifiable flags.
     """
 
+    if declares_intent(scenario):
+        _verify_scenario_intent(scenario, parse_psbt(psbt))
     if scenario.verification == "structural":
         _verify_bip375_structural(scenario, psbt)
         return
@@ -349,10 +577,9 @@ def verify_bip375_completion(scenario: Scenario, psbt: bytes) -> None:
     from embit.silent_payments import SilentPaymentsPSBT
 
     parsed = parse_psbt(psbt)
-    if len(parsed.inputs) != len(scenario.inputs):
-        raise VerificationError("final PSBT input count does not match the scenario")
-
     embit_psbt = SilentPaymentsPSBT.parse(psbt)
+
+
 
     sp_output_indices = [
         index for index, output in enumerate(embit_psbt.outputs) if output.sp_data is not None
@@ -428,11 +655,33 @@ def check_case_status(scenario: Scenario, *, generated: bool) -> str:
     return "passed" if generated else "completed"
 
 
+def external_run_claim(scenario: Scenario) -> dict[str, str]:
+    """Scope fields for a run that did not bind scenario intent.
+
+    Empty when the scenario declares inputs and outputs. MuSig2 keeps its
+    own claim. Never ``evidence``.
+    """
+
+    if scenario.suite == "musig2-sp":
+        claim = musig2_run_claim(scenario)
+        return {
+            "verification_scope": claim["verification_scope"],
+            "reason": claim["reason"],
+        }
+    if scenario.suite == "bip375" and not declares_intent(scenario):
+        return {
+            "verification_scope": "interop-only",
+            "reason": "consistency-only",
+        }
+    return {}
+
+
 def check_case_reason(scenario: Scenario, *, generated: bool) -> str | None:
     """Reason recorded beside ``check_case_status``. MuSig2 names its scope."""
 
-    if scenario.suite == "musig2-sp":
-        return musig2_run_claim(scenario)["reason"]
+    claim = external_run_claim(scenario)
+    if claim:
+        return claim["reason"]
     if generated:
         return None
     return "transport and strict merge completed; finalize and verify on-chain"

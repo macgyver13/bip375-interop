@@ -25,7 +25,7 @@ SCENARIO = {
         {"owner": "one", "type": "p2wpkh", "amount_sat": 100_000},
         {"owner": "two", "type": "p2wpkh", "amount_sat": 110_000},
     ],
-    "outputs": [{"type": "silent-payment", "amount_sat": 209_000}],
+    "outputs": [{"type": "silent-payment", "recipient_id": "recipient-a", "amount_sat": 209_000}],
 }
 
 
@@ -121,7 +121,7 @@ def test_real_spdk_accepts_signed_fixture_and_rejects_tampered_signature(tmp_pat
         "name": "single", "suite": "bip375", "network": "regtest",
         "signers": [{"name": "one", "backend": "coldcard", "seed_id": "test-a"}],
         "inputs": [{"owner": "one", "type": "p2wpkh", "amount_sat": 100_000}],
-        "outputs": [{"type": "silent-payment", "amount_sat": 90_000}],
+        "outputs": [{"type": "silent-payment", "recipient_id": "recipient-a", "amount_sat": 90_000}],
     })
     raw = build_bip375_fixture(scenario)
     psbt = SilentPaymentsPSBT.parse(raw)

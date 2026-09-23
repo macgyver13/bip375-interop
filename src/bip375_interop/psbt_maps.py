@@ -413,6 +413,8 @@ _FIELD_NAMES = {
         0x02: "partial_signature",
         0x03: "sighash_type",
         0x06: "bip32_derivation",
+        0x07: "final_scriptsig",
+        0x08: "final_scriptwitness",
         0x0E: "previous_txid",
         0x0F: "output_index",
         0x10: "sequence",
