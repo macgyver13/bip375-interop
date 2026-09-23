@@ -8,7 +8,10 @@ from bip375_interop.psbt_maps import PsbtEntry, PsbtMap, PsbtV2, parse_psbt
 from bip375_interop.test_seeds import mnemonic_for
 from bip375_interop.verification import (
     VerificationError,
+    check_case_reason,
+    check_case_status,
     expected_sp_output_script,
+    musig2_run_claim,
     verify_bip375_completion,
     verify_musig2_sp_completion,
 )
@@ -148,6 +151,77 @@ def test_completion_check_rejects_signature_from_wrong_key():
     tampered = PsbtV2(parsed.globals, tuple(inputs), parsed.outputs).serialize()
     with pytest.raises(VerificationError, match="does not verify against the owner's output key"):
         verify_bip375_completion(scenario, tampered)
+
+
+def test_completion_check_rejects_tampered_p2wpkh_signature():
+    scenario = _single_owner_scenario()
+    final_raw = _fully_signed_single_owner(scenario)
+    parsed = parse_psbt(final_raw)
+    inputs = list(parsed.inputs)
+    sig = next(entry for entry in inputs[0].entries if entry.key_type == 0x02)
+    flipped = sig.value[:-2] + bytes([sig.value[-2] ^ 0x01]) + sig.value[-1:]
+    inputs[0] = PsbtMap(tuple(
+        entry if entry.key_type != 0x02 else PsbtEntry(entry.key, flipped)
+        for entry in inputs[0].entries
+    ))
+    tampered = PsbtV2(parsed.globals, tuple(inputs), parsed.outputs).serialize()
+    with pytest.raises(VerificationError, match="partial signature does not verify"):
+        verify_bip375_completion(scenario, tampered)
+
+
+def _replace_global(parsed: PsbtV2, key_type: int, value: bytes | None) -> bytes:
+    entries = []
+    for entry in parsed.globals.entries:
+        if entry.key_type != key_type:
+            entries.append(entry)
+        elif value is not None:
+            entries.append(PsbtEntry(entry.key, value))
+    return PsbtV2(PsbtMap(tuple(entries)), parsed.inputs, parsed.outputs).serialize()
+
+
+def test_completion_check_rejects_missing_global_dleq():
+    scenario = _single_owner_scenario()
+    parsed = parse_psbt(_fully_signed_single_owner(scenario))
+    with pytest.raises(VerificationError, match="missing a global Silent Payment DLEQ proof"):
+        verify_bip375_completion(scenario, _replace_global(parsed, 0x08, None))
+
+
+def test_completion_check_rejects_wrong_global_share():
+    scenario = _single_owner_scenario()
+    parsed = parse_psbt(_fully_signed_single_owner(scenario))
+    share = next(entry.value for entry in parsed.globals.entries if entry.key_type == 0x07)
+    flipped = bytes([share[0] ^ 0x01]) + share[1:]
+    with pytest.raises(VerificationError, match="does not match the derived share"):
+        verify_bip375_completion(scenario, _replace_global(parsed, 0x07, flipped))
+
+
+def test_completion_check_rejects_wrong_global_dleq():
+    scenario = _single_owner_scenario()
+    parsed = parse_psbt(_fully_signed_single_owner(scenario))
+    proof = next(entry.value for entry in parsed.globals.entries if entry.key_type == 0x08)
+    flipped = bytes([proof[0] ^ 0x01]) + proof[1:]
+    with pytest.raises(VerificationError, match="DLEQ proof does not verify"):
+        verify_bip375_completion(scenario, _replace_global(parsed, 0x08, flipped))
+
+
+def test_plain_output_does_not_require_a_global_share():
+    """No Silent Payment output is the mode that legitimately has no share record."""
+    from embit import bip32, bip39
+    from embit.psbt import SIGHASH
+    from embit.silent_payments import SilentPaymentsPSBT
+
+    scenario = Scenario.from_dict({
+        "name": "plain",
+        "suite": "bip375",
+        "network": "regtest",
+        "signers": [{"name": "a", "backend": "coldcard", "seed_id": "test-a"}],
+        "inputs": [{"owner": "a", "type": "p2wpkh", "amount_sat": 10_000}],
+        "outputs": [{"type": "p2wpkh", "amount_sat": 9_000}],
+    })
+    psbt = SilentPaymentsPSBT.parse(build_bip375_fixture(scenario))
+    root = bip32.HDKey.from_seed(bip39.mnemonic_to_seed(mnemonic_for("test-a")))
+    psbt.sign_with(root, sighash=SIGHASH.ALL)
+    verify_bip375_completion(scenario, psbt.serialize())
 
 
 def test_completion_check_rejects_noop_signer():
@@ -295,9 +369,11 @@ def _build_per_input_flow(scenario: Scenario) -> tuple[bytes, bytes]:
     after_b = PsbtV2(parsed3.globals, tuple(inputs3), parsed3.outputs).serialize()
 
     expected_pub_a = ec.PrivateKey(priv_a).get_public_key().sec()
+    signed_a = SilentPaymentsPSBT.parse(after_b)
+    sig_a = ec.PrivateKey(priv_a).sign(signed_a.sighash(0, sighash=1)).serialize() + b"\x01"
     parsed4 = parse_psbt(after_b)
     inputs4 = list(parsed4.inputs)
-    inputs4[0] = PsbtMap(inputs4[0].entries + (PsbtEntry(bytes([0x02]) + expected_pub_a, b"\x30" * 10),))
+    inputs4[0] = PsbtMap(inputs4[0].entries + (PsbtEntry(bytes([0x02]) + expected_pub_a, sig_a),))
     final_raw = PsbtV2(
         _with_tx_modifiable_cleared(parsed4.globals), tuple(inputs4), parsed4.outputs
     ).serialize()
@@ -418,3 +494,29 @@ def test_musig2_completion_rejects_leftover_outputs_modifiable_after_round2():
     tampered = PsbtV2(globals_map, psbt.inputs, psbt.outputs)
     with pytest.raises(VerificationError, match="outputs-modifiable"):
         verify_musig2_sp_completion(scenario, "round2", tampered.serialize())
+
+
+def test_musig2_record_match_is_not_a_pass():
+    from bip375_interop.cli import _verification_fields
+
+    scenario = _musig2_scenario()
+    psbt = _musig2_psbt(
+        [(b"\x1c" + b"\x00" * 33, b"sig-a"), (b"\x1c" + b"\x01" * 33, b"sig-b")],
+        resolved=True,
+    )
+    verify_musig2_sp_completion(scenario, "round2", psbt.serialize())
+    claim = musig2_run_claim(scenario)
+    assert claim == {
+        "verification_scope": "interop-only",
+        "reason": "structural-musig2",
+        "status": "completed",
+    }
+    assert claim["verification_scope"] != "evidence"
+    assert check_case_status(scenario, generated=True) == "completed"
+    assert check_case_status(scenario, generated=False) == "completed"
+    assert check_case_reason(scenario, generated=False) == "structural-musig2"
+    assert check_case_reason(scenario, generated=True) == "structural-musig2"
+    assert _verification_fields(scenario) == {
+        "verification_scope": "interop-only",
+        "reason": "structural-musig2",
+    }
