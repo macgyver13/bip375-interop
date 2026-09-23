@@ -36,3 +36,15 @@ def test_reads_checkouts_from_config_before_starting_a_node(tmp_path: Path):
     assert result.returncode != 0
     assert str(missing) in result.stderr
     assert not (tmp_path / "w" / "node").exists()
+
+
+def test_expands_a_home_relative_silent_pay_path(tmp_path: Path):
+    config = tmp_path / "interop.yaml"
+    config.write_text("checkouts:\n  silent-pay:\n    path: ~/no-such-silent-pay-checkout\n")
+    result = _run(
+        "aggregate-then-derive",
+        BITCOIND="true", BITCOIN_CLI="true", CONFIG=str(config), WORK_DIR=str(tmp_path / "w"),
+    )
+
+    assert result.returncode != 0
+    assert str(Path.home() / "no-such-silent-pay-checkout") in result.stderr
