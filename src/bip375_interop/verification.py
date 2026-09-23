@@ -24,6 +24,7 @@ _TAP_KEY_SIGNATURE = 0x13
 _SP_ECDH_SHARE = 0x1D
 _SP_DLEQ = 0x1E
 _GLOBAL_SP_ECDH_SHARE = 0x07
+_GLOBAL_SP_DLEQ = 0x08
 _MUSIG2_PUB_NONCE = 0x1B
 _MUSIG2_PARTIAL_SIG = 0x1C
 
@@ -78,6 +79,40 @@ def _match_input_privkey(roots: list, inp) -> bytes | None:
     return None
 
 
+def _derive_sp(scenario: Scenario, embit_psbt):
+    """Return ``(A_sum_sec, results, output_order)`` from the scenario seeds.
+
+    ``results`` is ``{scan_key: (ecdh_share, outputs)}``. ``A_sum_sec`` is the
+    public sum of the eligible input keys, which is what a global DLEQ proof
+    is over. This mirrors ``SilentPaymentsPSBT._verify_declared_sp`` without
+    calling that private method.
+    """
+
+    from embit.silent_payments.sp import (
+        derive_sp_outputs,
+        get_eligible_inputs,
+        group_sp_outputs_by_scan_key,
+    )
+
+    scan_spend_groups, output_order = group_sp_outputs_by_scan_key(embit_psbt.outputs)
+    roots = _signer_roots(scenario)
+    priv_keys = []
+    for index in get_eligible_inputs(embit_psbt.inputs):
+        priv = _match_input_privkey(roots, embit_psbt.inputs[index])
+        if priv is None:
+            raise VerificationError(f"input {index} fingerprint matches no scenario seed")
+        priv_keys.append(priv)
+    if not priv_keys:
+        raise VerificationError("scenario has no BIP-352 eligible inputs")
+    derivation = derive_sp_outputs(
+        priv_keys, [inp.vin for inp in embit_psbt.inputs], scan_spend_groups,
+    )
+    if derivation is None:
+        raise VerificationError("scenario input private keys sum to zero")
+    _, a_sum_sec, results = derivation
+    return a_sum_sec, results, output_order
+
+
 def expected_sp_output_script(scenario: Scenario, psbt: bytes, output_index: int) -> bytes:
     """Independently recompute the BIP-352 output a device is expected to resolve.
 
@@ -90,11 +125,6 @@ def expected_sp_output_script(scenario: Scenario, psbt: bytes, output_index: int
     """
 
     from embit.silent_payments import SilentPaymentsPSBT
-    from embit.silent_payments.sp import (
-        derive_sp_outputs,
-        get_eligible_inputs,
-        group_sp_outputs_by_scan_key,
-    )
 
     embit_psbt = SilentPaymentsPSBT.parse(psbt)
     if output_index >= len(embit_psbt.outputs) or embit_psbt.outputs[output_index].sp_data is None:
@@ -102,36 +132,47 @@ def expected_sp_output_script(scenario: Scenario, psbt: bytes, output_index: int
             f"output {output_index} has no Silent Payment recipient information"
         )
 
-    scan_spend_groups, output_order = group_sp_outputs_by_scan_key(embit_psbt.outputs)
-
-    roots = _signer_roots(scenario)
-    priv_keys = []
-    for index in get_eligible_inputs(embit_psbt.inputs):
-        priv = _match_input_privkey(roots, embit_psbt.inputs[index])
-        if priv is None:
-            raise VerificationError(f"input {index} fingerprint matches no scenario seed")
-        priv_keys.append(priv)
-    if not priv_keys:
-        raise VerificationError("scenario has no BIP-352 eligible inputs")
-
-    outpoints = [inp.vin for inp in embit_psbt.inputs]
-    derivation = derive_sp_outputs(priv_keys, outpoints, scan_spend_groups)
-    if derivation is None:
-        raise VerificationError("scenario input private keys sum to zero")
-    _, _, results = derivation
-
+    _, results, output_order = _derive_sp(scenario, embit_psbt)
     target_scan = embit_psbt.outputs[output_index].sp_data.scan_key.sec()
     _, outputs = results[target_scan]
     position = output_order[target_scan].index(output_index)
     return b"\x51\x20" + outputs[position]
 
 
-def _verify_sp_input_evidence(scenario: Scenario, embit_psbt, parsed: PsbtV2) -> None:
-    """Require a per-input ECDH share and DLEQ proof for every eligible input.
+def _verify_global_sp_evidence(scenario: Scenario, embit_psbt, parsed: PsbtV2) -> None:
+    """Require the global ECDH share and DLEQ a single-signer resolution writes.
 
-    Only applies to a multi-owner, per-input contribution scenario: a
-    single-owner run resolves via a global share instead (embit's own
-    single-signer path), which is out of scope here.
+    The proof is over ``A_sum``, the sum of eligible input keys, and the share
+    must equal the share derived from the scenario seeds. A matching output
+    script is not a substitute. A run with no Silent Payment output never
+    reaches here: that is the mode that legitimately has no share record.
+    """
+
+    from embit.silent_payments.dleq import verify_dleq_proof
+
+    a_sum_sec, results, _ = _derive_sp(scenario, embit_psbt)
+    for scan_key_data, (expected_share, _) in results.items():
+        share = parsed.globals.get(bytes([_GLOBAL_SP_ECDH_SHARE]) + scan_key_data)
+        proof = parsed.globals.get(bytes([_GLOBAL_SP_DLEQ]) + scan_key_data)
+        if share is None:
+            raise VerificationError("missing a global Silent Payment ECDH share")
+        if proof is None:
+            raise VerificationError("missing a global Silent Payment DLEQ proof")
+        if share != expected_share:
+            raise VerificationError(
+                "global Silent Payment ECDH share does not match the derived share"
+            )
+        if not verify_dleq_proof(a_sum_sec, scan_key_data, share, proof):
+            raise VerificationError("global Silent Payment DLEQ proof does not verify")
+
+
+def _verify_sp_input_evidence(scenario: Scenario, embit_psbt, parsed: PsbtV2) -> None:
+    """Require Silent Payment share and DLEQ evidence for every eligible input.
+
+    A multi-owner per-input run must carry a per-input share and proof, and
+    must not carry a global share. A single-owner or ``contribution_mode:
+    global`` run must carry the global share and proof instead. No Silent
+    Payment output means no share record is required.
     """
 
     from embit import ec
@@ -144,6 +185,7 @@ def _verify_sp_input_evidence(scenario: Scenario, embit_psbt, parsed: PsbtV2) ->
     owners = {item.get("owner") for item in scenario.inputs}
     mode = scenario.suite_config.get("contribution_mode", "per-input")
     if mode == "global" or len(owners) <= 1:
+        _verify_global_sp_evidence(scenario, embit_psbt, parsed)
         return
 
     roots = _signer_roots(scenario)
@@ -186,6 +228,33 @@ def _verify_sp_input_evidence(scenario: Scenario, embit_psbt, parsed: PsbtV2) ->
                     f"input {index} Silent Payment DLEQ proof does not verify against its own key"
                 )
 
+def _verify_p2wpkh_signature(embit_psbt, index: int, raw: bytes, pubkey_sec: bytes) -> None:
+    """Verify a BIP-174 partial signature: DER bytes plus one sighash byte.
+
+    ``Signature.parse`` rejects trailing bytes, so the sighash byte is split
+    off before parsing. A value shorter than DER-plus-sighash, a malformed
+    DER body, or a signature that does not verify is a failure.
+    """
+
+    from embit import ec
+
+    if len(raw) < 2:
+        raise VerificationError(f"input {index} partial signature is missing a sighash byte")
+    der, sighash = raw[:-1], raw[-1]
+    try:
+        sig = ec.Signature.parse(der)
+    except Exception as exc:
+        raise VerificationError(
+            f"input {index} partial signature is not a DER signature plus sighash byte"
+        ) from exc
+    pubkey = ec.PublicKey.parse(pubkey_sec)
+    msg_hash = embit_psbt.sighash(index, sighash=sighash)
+    if not pubkey.verify(sig, msg_hash):
+        raise VerificationError(
+            f"input {index} partial signature does not verify against the owner's public key"
+        )
+
+
 
 def _verify_input_signature(roots: list, embit_psbt, parsed: PsbtV2, index: int) -> None:
     from embit import ec
@@ -206,6 +275,7 @@ def _verify_input_signature(roots: list, embit_psbt, parsed: PsbtV2, index: int)
             raise VerificationError(
                 f"input {index} partial signature key does not match the owner's derived public key"
             )
+        _verify_p2wpkh_signature(embit_psbt, index, entry.value, expected_pubkey)
         return
 
     entry = next((entry for entry in entries if entry.key_type == _TAP_KEY_SIGNATURE), None)
@@ -259,15 +329,17 @@ def _verify_bip375_structural(scenario: Scenario, psbt: bytes) -> None:
 
 
 def verify_bip375_completion(scenario: Scenario, psbt: bytes) -> None:
-    """Independently recompute and check every generated input and output.
+    """Check a generated bip375 PSBT against the scenario seeds.
 
-    Recomputes each Silent Payment output script from the PSBT's own
-    recipient information and each input's own derivation fields, and
-    verifies every signature and DLEQ proof cryptographically, so a resolver
-    that returns a wrong script or a signature from the wrong key fails here
-    rather than resting entirely on Coldcard/Jade's own validation of each
-    other. A scenario may opt into :func:`_verify_bip375_structural` instead
-    via ``verification: structural`` for the rare case this cannot apply.
+    Checks each Silent Payment output script, per-input ECDH share and DLEQ
+    for a multi-owner per-input run, the global ECDH share and DLEQ against
+    ``A_sum`` for a single-owner or global run, every P2WPKH partial
+    signature (DER plus sighash byte), every taproot key signature, and that
+    inputs-modifiable and outputs-modifiable are clear. A run with no Silent
+    Payment output is not required to carry a share. This uses embit. It is
+    not the Caravan or SPDK check. ``verification: structural`` skips the
+    cryptography and only requires a script, a signature field, and clear
+    modifiable flags.
     """
 
     if scenario.verification == "structural":
@@ -334,3 +406,33 @@ def verify_musig2_sp_completion(scenario: Scenario, phase: str, psbt: bytes) -> 
             if parsed.outputs[index].get(b"\x04") is None:
                 raise VerificationError(f"output {index} has an unresolved Silent Payment script")
         _check_tx_modifiable(parsed)
+
+
+def musig2_run_claim(scenario: Scenario) -> dict[str, str]:
+    """What a musig2-sp run may claim. Record counts are not evidence."""
+
+    if scenario.suite != "musig2-sp":
+        raise ValueError("musig2_run_claim is only for the musig2-sp suite")
+    return {
+        "verification_scope": "interop-only",
+        "reason": "structural-musig2",
+        "status": "completed",
+    }
+
+
+def check_case_status(scenario: Scenario, *, generated: bool) -> str:
+    """Status ``check`` may record. A musig2 record-count match is not a pass."""
+
+    if scenario.suite == "musig2-sp":
+        return musig2_run_claim(scenario)["status"]
+    return "passed" if generated else "completed"
+
+
+def check_case_reason(scenario: Scenario, *, generated: bool) -> str | None:
+    """Reason recorded beside ``check_case_status``. MuSig2 names its scope."""
+
+    if scenario.suite == "musig2-sp":
+        return musig2_run_claim(scenario)["reason"]
+    if generated:
+        return None
+    return "transport and strict merge completed; finalize and verify on-chain"
