@@ -4,5 +4,5 @@
 /build-cache/
 __pycache__/
 *.py[cod]
-interop.yaml
+/interop.yaml
 /spdk-cli/target/
