@@ -1,4 +1,6 @@
+import json
 from binascii import unhexlify
+from pathlib import Path
 
 import pytest
 
@@ -648,3 +650,92 @@ def test_external_run_without_declared_intent_is_not_evidence():
     assert "evidence" not in fields.values()
     assert check_case_reason(_single_owner_scenario(), generated=True) is None
     assert _verification_fields(_single_owner_scenario()) == {}
+
+
+def test_full_strict_generated_run_stays_a_pass():
+    from bip375_interop.cli import _verification_fields
+
+    scenario = _single_owner_scenario()
+    assert check_case_status(scenario, generated=True) == "passed"
+    assert _verification_fields(scenario) == {}
+
+
+def test_structural_run_is_not_a_pass(tmp_path: Path):
+    from bip375_interop.artifacts import ArtifactRun
+    from bip375_interop.batch import BatchRun
+    from bip375_interop.cli import _verification_fields, case_result_for_run, run_summary
+
+    scenario = _single_owner_scenario(verification="structural")
+    fields = _verification_fields(scenario)
+    assert fields == {"verification_scope": "not-evidence", "reason": "structural"}
+    assert "evidence" not in fields.values()
+    assert check_case_status(scenario, generated=True) != "passed"
+
+    artifacts = ArtifactRun(tmp_path / "runs", scenario.name)
+    manifest = artifacts.finalize({
+        "scenario": scenario.name,
+        "verification": scenario.verification,
+        "merge_policy": scenario.merge_policy,
+        "repairs": [],
+        **fields,
+    })
+    result = case_result_for_run(scenario, manifest, generated=True)
+    assert result.status != "passed"
+    assert result.status == "completed"
+    assert result.reason == "structural"
+    batch = BatchRun(tmp_path / "batches", "harness")
+    batch.add(result)
+    report_manifest, _ = batch.finalize()
+    payload = json.loads(report_manifest.read_text())
+    assert payload["counts"]["passed"] == 0
+    assert payload["results"][0]["status"] != "passed"
+    written = json.loads(manifest.read_text())
+    assert written["verification_scope"] == "not-evidence"
+    assert written.get("status") != "passed"
+
+    summary = run_summary(artifacts.path / "final.psbt", manifest, 12)
+    rendered = json.dumps(summary, indent=2)
+    assert summary["verification_scope"] == "not-evidence"
+    assert summary["final_psbt"] == str(artifacts.path / "final.psbt")
+    assert rendered.index('"verification_scope"') > rendered.index('"final_psbt"')
+    assert rendered.index('"manifest"') > rendered.index('"verification_scope"')
+
+
+def test_combiner_policy_is_not_a_pass():
+    from dataclasses import replace
+
+    from bip375_interop.cli import _verification_fields
+
+    scenario = replace(_single_owner_scenario(), merge_policy="combiner")
+    assert check_case_status(scenario, generated=True) != "passed"
+    assert _verification_fields(scenario) == {
+        "verification_scope": "not-evidence",
+        "reason": "combiner-repairs",
+    }
+
+
+def test_recorded_repair_is_not_a_pass(tmp_path: Path):
+    from bip375_interop.artifacts import ArtifactRun
+    from bip375_interop.cli import _verification_fields, case_result_for_run
+
+    scenario = _single_owner_scenario()
+    repairs = [{
+        "step": 2, "phase": "resolve-sign", "signer": "a", "field": "tx_modifiable",
+    }]
+    assert check_case_status(scenario, generated=True) == "passed"
+    fields = _verification_fields(scenario, repairs)
+    assert fields == {"verification_scope": "not-evidence", "reason": "combiner-repairs"}
+    artifacts = ArtifactRun(tmp_path, scenario.name)
+    manifest = artifacts.finalize({
+        "scenario": scenario.name,
+        "verification": scenario.verification,
+        "merge_policy": scenario.merge_policy,
+        "repairs": repairs,
+        **fields,
+    })
+    result = case_result_for_run(scenario, manifest, generated=True)
+    assert result.status != "passed"
+    assert result.reason == "combiner-repairs"
+    written = json.loads(manifest.read_text())
+    assert written["verification_scope"] == "not-evidence"
+    assert written["repairs"] == repairs

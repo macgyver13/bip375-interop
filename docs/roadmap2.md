@@ -22,7 +22,7 @@ Three result labels, written into the run manifest:
 | `interop-only` | Round completed, but this process did not check intent or did not check MuSig2 aggregation. `reason` says which. |
 | `not-evidence` | `verification: structural`, `merge_policy: combiner`, or a skipped validator. Must not be reported as a pass. |
 
-`reason` is a short string (`structural-musig2`, `consistency-only`, `validator-skipped`, `combiner-repairs`). It is not a fourth scope. Do not widen `passed` in `check` until Workstream A and the release gate in Workstream D are in.
+`reason` is a short string (`structural-musig2`, `consistency-only`, `validator-skipped`, `combiner-repairs`, `structural`). It is not a fourth scope. Do not widen `passed` in `check` until Workstream A and the release gate in Workstream D are in.
 
 ## Non-goals
 
@@ -135,6 +135,14 @@ Acceptance: an engine test where signer B, during `contribute`, adds a `partial_
 ---
 
 ## C. Make weak modes obvious
+
+Landed on `psbt-weak-modes`. A run with `verification: structural` writes
+`verification_scope: not-evidence` and `reason: structural`, including when
+the policy is also combiner. `merge_policy: combiner`, or any recorded
+repair on a full run, writes the same scope with `reason: combiner-repairs`.
+`check` records those runs as `completed`, not `passed`. The run JSON prints
+the scope beside `final_psbt`. Merge failures keep the field text and prefix
+step, phase, and signer.
 
 ### C1. `not-evidence` for structural verification and combiner repairs
 

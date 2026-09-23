@@ -6,4 +6,3 @@ __pycache__/
 *.py[cod]
 interop.yaml
 /spdk-cli/target/
-/spdk-cli/Cargo.lock

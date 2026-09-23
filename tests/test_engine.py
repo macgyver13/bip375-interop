@@ -282,3 +282,22 @@ def test_resolve_sign_rejects_a_final_witness_on_an_unowned_input(tmp_path: Path
             artifacts,
             scenario=scenario,
         )
+
+
+def test_merge_omission_names_the_signer(tmp_path: Path):
+    from bip375_interop.psbt_maps import PsbtMergeError
+
+    base = _psbt([(b"\x03", (1).to_bytes(4, "little"))])
+    omitted = _psbt([])
+    artifacts = ArtifactRun(tmp_path, "case")
+    with pytest.raises(PsbtMergeError, match="signer 'jade-b'") as caught:
+        run_rounds(
+            base,
+            (Round("resolve-sign", ("jade-b",)),),
+            {"jade-b": _FakeWorker({"resolve-sign": omitted})},
+            artifacts,
+        )
+    assert str(caught.value) == (
+        "step 1 phase resolve-sign signer 'jade-b': "
+        "contribution omits input 0 sighash_type (03)"
+    )
