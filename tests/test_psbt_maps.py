@@ -195,10 +195,10 @@ def test_merge_allows_bip375_output_resolution_and_flag_clearing() -> None:
 
 @pytest.mark.parametrize("merge_policy", ["strict", "combiner"])
 def test_merge_omitted_tx_modifiable_during_bip375_resolution(merge_policy: str) -> None:
-    # A real device (Jade) has been observed omitting tx_modifiable entirely
-    # instead of writing it back with cleared flags when it resolves a
-    # silent payment output. That is a dropped record, not a harmless
-    # omission, so it must not be papered over silently.
+    # BIP-370 lets a signer lock the transaction "by setting the appropriate bits
+    # in PSBT_GLOBAL_TX_MODIFIABLE to 0 or by removing the field entirely", and
+    # libwally (Jade) writes cleared flags by omitting the field. The merge keeps
+    # the field and records it as cleared.
     base = fixture(
         unresolved_sp=True,
         globals_extra=[(b"\x06", b"\x03")],
@@ -207,15 +207,11 @@ def test_merge_omitted_tx_modifiable_during_bip375_resolution(merge_policy: str)
         unresolved_sp=True,
         output_extra=[(b"\x04", bytes.fromhex("225120") + b"\x44" * 32)],
     )
-    if merge_policy == "strict":
-        with pytest.raises(PsbtMergeError, match="tx_modifiable"):
-            merge_psbts(base, contribution, merge_policy)
-        return
     merged_bytes, repairs = merge_psbts(base, contribution, merge_policy)
     merged = parse_psbt(merged_bytes)
-    assert merged.globals.get(b"\x06") == b"\x03"
+    assert merged.globals.get(b"\x06") == b"\x00"
     assert merged.outputs[0].get(b"\x04") is not None
-    assert [(repair.scope, repair.field) for repair in repairs] == [("global", "tx_modifiable")]
+    assert not repairs
 
 
 def test_merge_rejects_enabling_modifiable_flags() -> None:

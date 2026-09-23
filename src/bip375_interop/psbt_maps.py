@@ -375,6 +375,12 @@ def _merge_map(
     for entry in base.entries:
         if entry.key in contributed_keys:
             continue
+        if scope == "global" and entry.key == b"\x06":
+            # BIP-370: removing tx_modifiable is the same as clearing every flag,
+            # and libwally writes cleared flags that way. Keep the field, cleared.
+            position = next(i for i, value in enumerate(entries) if value.key == entry.key)
+            entries[position] = PsbtEntry(entry.key, b"\x00")
+            continue
         field = _field_name(scope, entry)
         if merge_policy == "strict":
             raise PsbtMergeError(
