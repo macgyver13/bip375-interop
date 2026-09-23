@@ -24,3 +24,15 @@ def test_reports_a_missing_bitcoind_before_doing_any_work(tmp_path: Path):
     assert result.returncode == 2
     assert "BITCOIND" in result.stderr
     assert not (tmp_path / "w" / "wallet.toml").exists()
+
+
+def test_reads_checkouts_from_config_before_starting_a_node(tmp_path: Path):
+    missing = tmp_path / "profile" / "interop.yaml"
+    result = _run(
+        "aggregate-then-derive",
+        BITCOIND="true", BITCOIN_CLI="true", CONFIG=str(missing), WORK_DIR=str(tmp_path / "w"),
+    )
+
+    assert result.returncode != 0
+    assert str(missing) in result.stderr
+    assert not (tmp_path / "w" / "node").exists()
