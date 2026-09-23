@@ -59,10 +59,8 @@ class ColdcardAdapter:
                 "unix/Makefile",
                 "testing/run_sim_tests.py",
                 f"testing/{self._PLAIN_TEST_MODULE}",
-                f"testing/{self._TEST_MODULE}",
                 "testing/test_bip375_vectors.py",
                 "testing/test_bip352_vectors.py",
-                "testing/test_musig2_sp_signers.py",
             ),
         )
         self.testing_dir = self.firmware_dir / "testing"
@@ -132,6 +130,11 @@ class ColdcardAdapter:
                 f"Coldcard artifact directory must be outside the source checkout: {artifact_dir}"
             )
         if suite is SuiteName.MUSIG2_SP:
+            # Only a MuSig2 line of the firmware has these; a BIP-375 line is still valid.
+            require_checkout(
+                self.firmware_dir,
+                (f"testing/{self._TEST_MODULE}", "testing/test_musig2_sp_signers.py"),
+            )
             for name in self._FIXTURES:
                 if not (fixture_dir / name).is_file():
                     raise ValueError(f"Coldcard fixture is missing: {fixture_dir / name}")

@@ -128,3 +128,16 @@ def test_plan_rejects_artifacts_inside_source_checkout(tmp_path: Path):
             checkout / "testing" / "data",
             checkout / "generated-artifacts",
         )
+
+
+def test_bip375_only_checkout_is_accepted_but_cannot_plan_musig2(tmp_path: Path):
+    checkout = make_checkout(tmp_path)
+    (checkout / "testing" / "test_musig2_silentpayments.py").unlink()
+    (checkout / "testing" / "test_musig2_sp_signers.py").unlink()
+    adapter = ColdcardAdapter(checkout)
+    fixtures = checkout.parent / "fixtures"
+    fixtures.mkdir()
+
+    adapter.plan_test(fixtures, tmp_path / "artifacts", suite=SuiteName.BIP375)
+    with pytest.raises(ValueError, match="test_musig2_silentpayments.py"):
+        adapter.plan_test(checkout / "testing" / "data", tmp_path / "artifacts")
