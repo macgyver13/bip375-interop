@@ -42,12 +42,16 @@ Per-backend prerequisites (full list in [docs/runbook.md](docs/runbook.md#prereq
 
 ## Regression testing
 
-Two configs exist:
+Three configs exist:
 
 - `interop.yaml` (repo root): your live checkouts. Use it while developing a change.
-- `baseline/interop.yaml`: the stable pin. It has its own `interop.lock` and
-  `expectations.yaml`, and is what "no regression" is measured against. Pass
-  `--config baseline/interop.yaml` to run against it.
+- `baseline/interop.yaml`: the primary profile, the BIP-375 line of every repo. It has its
+  own `interop.lock` and `expectations.yaml`, and is what "no regression" is measured
+  against. Pass `--config baseline/interop.yaml` to run against it.
+- `baseline-musig2/interop.yaml`: the same, except repos with a MuSig2 line (jade,
+  coldcard) use it. MuSig2 work must not regress BIP-375, so this profile shares the
+  primary `expectations.yaml` (a symlink) and runs the same `check`, plus the MuSig2-SP
+  regtest legs.
 
 ### After changing a repo
 
@@ -76,20 +80,23 @@ device.
 bip375-interop --config baseline/interop.yaml doctor
 pytest -q
 bip375-interop --config baseline/interop.yaml check --project harness --exhaustive > check.log 2>&1; echo "exit $?"
-ALLOW_DIRTY=1 just musig2-regtest aggregate-then-derive
-ALLOW_DIRTY=1 just musig2-regtest derive-then-aggregate
+```
+
+For MuSig2 work, run the same against `baseline-musig2/interop.yaml`, then both legs:
+
+```sh
+bip375-interop --config baseline-musig2/interop.yaml check --project harness --exhaustive > check-musig2.log 2>&1; echo "exit $?"
+CONFIG=baseline-musig2/interop.yaml ALLOW_DIRTY=1 just musig2-regtest aggregate-then-derive
+CONFIG=baseline-musig2/interop.yaml ALLOW_DIRTY=1 just musig2-regtest derive-then-aggregate
 ```
 
 `check --exhaustive` takes several minutes. Redirect it to a file rather than piping it
 through `tail`, which would hide its exit code. The regtest legs print `PASS` with a txid
-only after the recipient's output is found on-chain. They read `interop.yaml` at the repo
-root, not the baseline config; set `SILENT_PAY=<path>` to point them at another
-silent-pay checkout.
+only after the recipient's output is found on-chain. Without `CONFIG` they use the root
+`interop.yaml`.
 
 `ALLOW_DIRTY=1` and `--allow-dirty` are needed on the baseline today because a built
-coldcard-firmware checkout always carries an uncommitted `bech32.patch`, and the
-silent-pay and spdk baseline worktrees carry path patches (see
-[docs/regression-plan.md](docs/regression-plan.md#rust-psbt-an-undeclared-fourth-pin)).
+coldcard-firmware checkout always carries an uncommitted `bech32.patch`.
 
 ### Reading the result
 

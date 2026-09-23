@@ -47,7 +47,7 @@ so tools and agents stop guessing. Detected today:
 | bitsaga-seedsigner | GitButler | |
 | seedsigner | git | branch `sp-send-support` |
 | caravan | git | branch `feat/sp-sending` |
-| embit (`/Users/ron/src/embit`) | git | editable install, not yet in `interop.yaml` |
+| embit (`/Users/macgyver/src/embit`) | git | editable install, not yet in `interop.yaml` |
 
 Confirm this table before it lands in `interop.yaml`; the detection was by directory
 markers only.

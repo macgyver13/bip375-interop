@@ -1,0 +1,37 @@
+# MuSig2 profile. Same checkouts as ../baseline/interop.yaml, except that each repo with
+# a MuSig2 line (jade, coldcard) uses it here. MuSig2 work must not regress BIP-375, so
+# this profile shares the primary profile's expectations.yaml (symlink) and runs the same
+# `check`, plus the two MuSig2-SP regtest legs:
+#   CONFIG=baseline-musig2/interop.yaml just musig2-regtest aggregate-then-derive
+artifact_root: ../artifacts
+allow_dirty: false
+checkouts:
+  silent-pay:
+    path: /Users/macgyver/src/silent-pay-baseline
+    revision: null
+  bip375-test-generator:
+    path: /Users/macgyver/src/bip375-test-generator
+    revision: null
+  coldcard:
+    path: /Users/macgyver/src/coldcard-firmware-baseline
+    revision: null
+  jade:
+    # TODO: create with `git worktree add --detach` at the lock's jade pin (tag
+    # bip375-interop/baseline-2026-09-22), then build build/flash_image.bin there.
+    path: /Users/macgyver/src/Jade-sp-musig
+    revision: null
+  seedsigner:
+    path: /Users/macgyver/src/seedsigner
+    revision: null
+  bitsaga-seedsigner:
+    path: /Users/macgyver/src/bitsaga-seedsigner
+    revision: null
+  caravan:
+    path: /Users/macgyver/src/caravan
+    revision: null
+  spdk:
+    path: /Users/macgyver/src/spdk-baseline
+    revision: null
+  embit:
+    path: /Users/macgyver/src/embit
+    revision: null

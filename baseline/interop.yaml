@@ -1,0 +1,34 @@
+# Stable-pin baseline. Checkouts either point at a frozen worktree (silent-pay,
+# coldcard, spdk: their live checkouts move too fast to pin directly, and are not
+# to be disturbed) or at the same live path as ../interop.yaml, pinned by whatever
+# `pin` finds there at write time. See ../docs/regression-plan.md, "Baseline".
+artifact_root: ../artifacts
+allow_dirty: false
+checkouts:
+  silent-pay:
+    path: /Users/macgyver/src/silent-pay-baseline
+    revision: null
+  bip375-test-generator:
+    path: /Users/macgyver/src/bip375-test-generator
+    revision: null
+  coldcard:
+    path: /Users/macgyver/src/coldcard-firmware-baseline
+    revision: null
+  jade:
+    path: /Users/macgyver/src/Jade
+    revision: null
+  seedsigner:
+    path: /Users/macgyver/src/seedsigner
+    revision: null
+  bitsaga-seedsigner:
+    path: /Users/macgyver/src/bitsaga-seedsigner
+    revision: null
+  caravan:
+    path: /Users/macgyver/src/caravan
+    revision: null
+  spdk:
+    path: /Users/macgyver/src/spdk-baseline
+    revision: null
+  embit:
+    path: /Users/macgyver/src/embit
+    revision: null
