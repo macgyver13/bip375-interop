@@ -27,7 +27,7 @@ its current status as of the most recent artifact evidence in `artifacts/`. Comp
   "Building a MuSig2-SP treasury and initial PSBT" below. Plain BIP-375 scenarios can
   either take `--psbt` or use `run-generated`, which synthesizes one in-process.
 
-All commands below assume `cd /Users/macgyver/src/bip375-interop && source .venv/bin/activate`.
+All commands below run from the repo root with the venv active (`source .venv/bin/activate`).
 
 ## Quick reference
 
@@ -670,7 +670,7 @@ recipient's output. Set `ALLOW_DIRTY=1` for a development run. The manual steps 
 4. Build the initial PSBT -- `build_round1` self-mines and matures the treasury deposit
    automatically on regtest, no manual funding step needed:
    ```bash
-   cd /Users/macgyver/src/silent-pay
+   cd ~/src/silent-pay
    cargo run -p sp-demo --bin build_round1 -- --wallet wallet.toml \
      --recipients recipients.toml --out-dir <dir> --rpc-url http://127.0.0.1:<port> \
      --rpc-cookie <datadir>/regtest/.cookie
@@ -689,7 +689,7 @@ for the exact commands and a concrete worked example.
 Once a scenario produces a fully-signed `final.psbt`:
 
 ```bash
-cd /Users/macgyver/src/silent-pay
+cd ~/src/silent-pay
 cargo run -p sp-demo --bin finalize -- <final.psbt>
 cargo run -p sp-demo --bin broadcast_final -- --wallet wallet.toml \
   --tx-hex-file <musig2-sp-final-hex.txt> --rpc-url http://127.0.0.1:<port> \

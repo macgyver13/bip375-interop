@@ -181,7 +181,7 @@
   signers (seed_ids `test-a`/`test-b`/`test-c`), `suite: musig2-sp`, `network: signet`,
   `suite_config: {key_architecture: aggregate-then-derive, threshold: 3}`.
 - [x] Ran `bip375-interop run scenarios/musig2-sp-signet-treasury.yaml --psbt
-  /Users/macgyver/work/bip375_artifacts/signet-treasury/initial.psbt`. The PSBT-parsing
+  ~/work/bip375_artifacts/signet-treasury/initial.psbt`. The PSBT-parsing
   question from the prior pass is resolved and is a real interop win: embit's
   `embit.silent_payments.psbt.SilentPaymentsPSBT.parse` accepts byte-for-byte what
   silent-pay's Rust `psbt`/`psbt-v2` crates encoded (BIP-373 MuSig2 fields, BIP-375 SP
@@ -276,7 +276,7 @@
      funding step needed.
   5. `bip375-interop run scenarios/musig2-sp-three-way.yaml --psbt <initial.psbt>`.
 
-  **Live-verified artifacts** (signet, `/Users/macgyver/work/bip375_artifacts/signet-treasury/`):
+  **Live-verified artifacts** (signet, `~/work/bip375_artifacts/signet-treasury/`):
   - `wallet.toml` -- 3-of-3 aggregate-then-derive treasury descriptor derived from
     `test-a`/`test-b`/`test-c` (fingerprints `73c5da0a`/`b8688df1`/`28645006`, path
     `m/48h/1h/0h/3h`). Regenerate via `bip375-interop treasury-wallet test-a test-b
@@ -408,10 +408,10 @@
   `SeedSignerWorker.process()`'s hardcoded `"upstream SeedSigner does not support
   MuSig2-SP"` (`src/bip375_interop/signer_worker.py:84-87`) were previously just
   harness-side assumptions, never checked against upstream source. Checked the
-  `seedsigner` checkout directly (`/Users/macgyver/src/seedsigner`, remotes
+  `seedsigner` checkout directly (`~/src/seedsigner`, remotes
   `upstream` = `SeedSigner/seedsigner`, `origin` = `notTanveer/seedsigner`): no file
   anywhere in its source tree mentions `musig`, `musig2`, or `frost` in any form.
-  Compare with `/Users/macgyver/src/bitsaga-seedsigner` (remotes `upstream` =
+  Compare with `~/src/bitsaga-seedsigner` (remotes `upstream` =
   `3rdIteration/seedsigner`, `origin` = `bitsagarob/seedsigner`): dedicated modules
   (`helpers/musig2.py`, `musig2_psbt.py`, `musig2_card.py`), five dedicated test
   files, `docs/musig2.md`, dozens of feature commits, and its own forked `embit` pin
