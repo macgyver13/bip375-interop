@@ -8,7 +8,7 @@ from typing import Any, Callable, Mapping, Sequence
 
 from .artifacts import ArtifactRun
 from .models import Scenario
-from .psbt_maps import DiffSummary, _encode_compact_size, merge_psbts, parse_psbt, semantic_diff
+from .psbt_maps import DiffSummary, PsbtMergeError, _encode_compact_size, merge_psbts, parse_psbt, semantic_diff
 from .verification import VerificationError
 from .worker import WorkerClient, WorkerStepResult
 
@@ -45,7 +45,8 @@ def run_rounds(
     Every step's semantic diff against the PSBT it received is written
     beside the returned PSBT so a device's contribution is auditable even
     when the merge itself succeeds.  Returns the final PSBT and the list of
-    repairs the merge made (always empty under ``strict``).
+    repairs the merge made (always empty under ``strict``). A merge rejection
+    names the step, phase, and signer and keeps the field text.
 
     When ``scenario`` is given, each step's diff is checked against what its
     phase requires of that signer: a share and DLEQ, and no signature, output
@@ -78,7 +79,12 @@ def run_rounds(
             )
             if scenario is not None:
                 _assert_phase_contract(scenario, round_spec.name, signer, diff)
-            current, step_repairs = merge_psbts(current, returned, merge_policy)
+            try:
+                current, step_repairs = merge_psbts(current, returned, merge_policy)
+            except PsbtMergeError as exc:
+                raise PsbtMergeError(
+                    f"step {step} phase {round_spec.name} signer {signer!r}: {exc}"
+                ) from exc
             for repair in step_repairs:
                 repairs.append({
                     "step": step, "phase": round_spec.name, "signer": signer,
