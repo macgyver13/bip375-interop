@@ -25,21 +25,24 @@ Ask only for what the request does not already say:
 ## Steps
 
 Run from the repo root with the venv active (`source .venv/bin/activate`); without it, use
-`PYTHONPATH=src python3 -m bip375_interop.cli` in place of `bip375-interop`. Long runs
-(`check --exhaustive` is several minutes) go in the background.
+`PYTHONPATH=src python3 -m bip375_interop.cli` in place of `bip375-interop`. Set
+`CONFIG=baseline-musig2/interop.yaml` for the pinned full release gate. Use
+`baseline/interop.yaml` for the BIP-375-only baseline, or `interop.yaml` for live
+development. Use Node 24 on `PATH` for the Interop Lab parser matrix. Long checks go
+in the background.
 
-1. `bip375-interop doctor` (add `--allow-dirty` only for a development run). Record each
+1. `bip375-interop --config "$CONFIG" doctor` (add `--allow-dirty` only for a development run). Record each
    checkout's VCS and tip. Note any that are dirty or differ from `interop.lock`.
 2. Baseline only: after the user picks revisions and the checkouts are clean,
-   `bip375-interop pin`, then show the lock for review. Never pin a dirty tree.
+   `bip375-interop --config "$CONFIG" pin`, then show the lock for review. Never pin a dirty tree.
 3. `python -m pytest -q tests`. Stop and report if it fails.
-4. `bip375-interop check --project harness --exhaustive`. Add
-   `--psbt SCENARIO=PATH` for any MuSig2-SP scenario that already has an initial PSBT.
-5. MuSig2-SP legs that have no PSBT: `just musig2-regtest aggregate-then-derive` and
-   `just musig2-regtest derive-then-aggregate`. They need `bitcoind` and `bitcoin-cli`
-   (`BITCOIND` / `BITCOIN_CLI`); `ALLOW_DIRTY=1` for a development run. A leg passes only
-   when it prints `PASS`.
-6. Read `report.json` in the new `artifacts/batches/` directory, not just the summary.
+4. `bip375-interop --config "$CONFIG" check --project harness --release` for the pinned
+   MuSig2 baseline. This includes Interop Lab and both MuSig2-SP regtest legs; each leg
+   passes only when it prints `PASS`. Use `--exhaustive` for the BIP-375-only or live
+   profile, which does not run the full release gate. Add `--psbt SCENARIO=PATH` for
+   any MuSig2-SP scenario that already has an initial PSBT. The release legs need
+   `bitcoind` and `bitcoin-cli` (`BITCOIND` / `BITCOIN_CLI`).
+5. Read `report.json` in the new `artifacts/batches/` directory, not just the summary.
 
 ## Reading the result
 

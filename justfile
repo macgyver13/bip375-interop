@@ -9,6 +9,11 @@ doctor *args:
 validate scenario:
     PYTHONPATH={{project_root}}/src python3 -m bip375_interop.cli --config {{project_root}}/interop.yaml validate {{scenario}}
 
+
+# Release gate: both validators on every bip375 scenario, plus both MuSig2 regtest legs.
+release *args:
+    PYTHONPATH={{project_root}}/src python3 -m bip375_interop.cli --config {{project_root}}/interop.yaml {{args}} check --release
+
 # One MuSig2-SP leg on a throwaway regtest node: architecture is
 # aggregate-then-derive or derive-then-aggregate. See scripts/musig2-regtest.sh for env vars.
 musig2-regtest architecture="aggregate-then-derive":
