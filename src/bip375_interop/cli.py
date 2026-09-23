@@ -33,7 +33,7 @@ from .treasury import build_treasury_descriptor, build_wallet_toml
 from .verification import (
     check_case_reason,
     check_case_status,
-    external_run_claim,
+    run_claim,
     require_input_utxos,
     verify_bip375_completion,
     verify_musig2_sp_completion,
@@ -191,8 +191,42 @@ def _run_validators(config, scenario, run_artifacts) -> list[dict]:
     return records
 
 
-def _verification_fields(scenario) -> dict:
-    return external_run_claim(scenario)
+def _verification_fields(scenario, repairs=()) -> dict:
+    claim = run_claim(scenario, repairs=repairs, generated=True)
+    return {key: claim[key] for key in ("verification_scope", "reason") if key in claim}
+
+
+def _recorded_repairs(manifest: Path) -> list:
+    payload = json.loads(manifest.read_text())
+    repairs = payload.get("repairs") or []
+    return list(repairs) if isinstance(repairs, list) else []
+
+
+def case_result_for_run(scenario, manifest: Path, *, generated: bool) -> CaseResult:
+    """Batch row for a finished run. A weak mode is not ``passed``."""
+
+    repairs = _recorded_repairs(manifest)
+    return CaseResult(
+        scenario.name,
+        check_case_status(scenario, generated=generated, repairs=repairs),
+        check_case_reason(scenario, generated=generated, repairs=repairs),
+        str(manifest),
+    )
+
+
+def run_summary(final_psbt: Path, manifest: Path, size: int) -> dict:
+    """CLI summary. The scope label sits beside the artifact path."""
+
+    payload = json.loads(manifest.read_text())
+    scope = payload.get("verification_scope")
+    if not scope:
+        return {"final_psbt": str(final_psbt), "manifest": str(manifest), "bytes": size}
+    return {
+        "final_psbt": str(final_psbt),
+        "verification_scope": scope,
+        "manifest": str(manifest),
+        "bytes": size,
+    }
 
 
 def _with_utxo_source(payload: dict, utxo_source: str | None) -> dict:
@@ -207,6 +241,7 @@ def _run_generated_scenario(config, scenario, signer_order: tuple[str, ...] | No
     run_artifacts = ArtifactRun(config.artifact_root, scenario.name)
     workers, states = {}, []
     utxo_source = None
+    repairs: tuple = ()
     try:
         workers, states = _start_workers(config, scenario, run_artifacts)
         initial_psbt = build_bip375_fixture(scenario)
@@ -229,7 +264,7 @@ def _run_generated_scenario(config, scenario, signer_order: tuple[str, ...] | No
             "merge_policy": scenario.merge_policy,
             "repairs": list(repairs),
             "validators": validators,
-            **_verification_fields(scenario),
+            **_verification_fields(scenario, repairs),
         }, utxo_source))
         return run_artifacts.path / "final.psbt", manifest, len(final_psbt)
     except Exception as exc:
@@ -239,7 +274,7 @@ def _run_generated_scenario(config, scenario, signer_order: tuple[str, ...] | No
             "status": "failed",
             "error": str(exc),
             "checkouts": [asdict(state) for state in states],
-            **_verification_fields(scenario),
+            **_verification_fields(scenario, repairs),
         }, utxo_source))
         raise
     finally:
@@ -255,6 +290,7 @@ def _run_psbt_scenario(
     run_artifacts = ArtifactRun(config.artifact_root, scenario.name)
     workers, states = {}, []
     utxo_source = None
+    repairs: tuple = ()
     try:
         suite_config = get_suite(scenario.suite).validate(scenario)
         descriptor = None
@@ -293,7 +329,7 @@ def _run_psbt_scenario(
             "merge_policy": scenario.merge_policy,
             "repairs": list(repairs),
             "validators": validators,
-            **_verification_fields(scenario),
+            **_verification_fields(scenario, repairs),
         }, utxo_source))
         return run_artifacts.path / "final.psbt", manifest, len(final_psbt)
     except Exception as exc:
@@ -303,7 +339,7 @@ def _run_psbt_scenario(
             "status": "failed",
             "error": str(exc),
             "checkouts": [asdict(state) for state in states],
-            **_verification_fields(scenario),
+            **_verification_fields(scenario, repairs),
         }, utxo_source))
         raise
     finally:
@@ -436,22 +472,12 @@ def main(argv: list[str] | None = None) -> int:
                 try:
                     if entry.runnable_generated:
                         _, manifest, _ = _run_generated_scenario(config, entry.scenario)
-                        batch.add(CaseResult(
-                            entry.scenario.name,
-                            check_case_status(entry.scenario, generated=True),
-                            check_case_reason(entry.scenario, generated=True),
-                            str(manifest),
-                        ))
+                        batch.add(case_result_for_run(entry.scenario, manifest, generated=True))
                     elif not psbt_path.is_file():
                         batch.add(CaseResult(entry.scenario.name, "failed", f"PSBT is missing: {psbt_path}"))
                     else:
                         _, manifest, _ = _run_psbt_scenario(config, entry.scenario, psbt_path)
-                        batch.add(CaseResult(
-                            entry.scenario.name,
-                            check_case_status(entry.scenario, generated=False),
-                            check_case_reason(entry.scenario, generated=False),
-                            str(manifest),
-                        ))
+                        batch.add(case_result_for_run(entry.scenario, manifest, generated=False))
                 except InteropError as exc:
                     batch.add(CaseResult(entry.scenario.name, "failed", str(exc)))
             expectations_path = args.config.parent / "expectations.yaml"
@@ -498,15 +524,11 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.command == "run-generated":
             final_psbt, manifest, size = _run_generated_scenario(config, scenario, signer_order)
-            print(json.dumps({
-                "final_psbt": str(final_psbt), "manifest": str(manifest), "bytes": size,
-            }, indent=2))
+            print(json.dumps(run_summary(final_psbt, manifest, size), indent=2))
             return 0
         if args.command == "run":
             final_psbt, manifest, size = _run_psbt_scenario(config, scenario, args.psbt, signer_order)
-            print(json.dumps({
-                "final_psbt": str(final_psbt), "manifest": str(manifest), "bytes": size,
-            }, indent=2))
+            print(json.dumps(run_summary(final_psbt, manifest, size), indent=2))
             return 0
         print(f"valid: {scenario.name} ({scenario.suite})")
         return 0

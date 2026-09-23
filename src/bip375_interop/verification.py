@@ -10,6 +10,7 @@ generator's own generation-time conventions.
 from __future__ import annotations
 
 from binascii import unhexlify
+from collections.abc import Sequence
 
 from .errors import InteropError
 from .models import Scenario
@@ -329,6 +330,7 @@ def _verify_bip375_structural(scenario: Scenario, psbt: bytes) -> None:
     Does not recompute anything or verify any cryptography. Opt in with the
     scenario's ``verification: structural`` field only for the rare case
     that the full check in :func:`verify_bip375_completion` cannot apply.
+    That opt-out is not evidence and must not be reported as a pass.
     """
 
     parsed = parse_psbt(psbt)
@@ -565,7 +567,7 @@ def verify_bip375_completion(scenario: Scenario, psbt: bytes) -> None:
     Payment output is not required to carry a share. This uses embit. It is
     not the Caravan or SPDK check. ``verification: structural`` skips the
     cryptography and only requires a script, a signature field, and clear
-    modifiable flags.
+    modifiable flags. Callers record that run as ``not-evidence``.
     """
 
     if declares_intent(scenario):
@@ -647,41 +649,80 @@ def musig2_run_claim(scenario: Scenario) -> dict[str, str]:
     }
 
 
-def check_case_status(scenario: Scenario, *, generated: bool) -> str:
-    """Status ``check`` may record. A musig2 record-count match is not a pass."""
+def _not_evidence(scenario: Scenario, repairs: Sequence[object]) -> bool:
+    """Structural verification and combiner repairs are not a release result."""
 
+    return (
+        scenario.verification == "structural"
+        or scenario.merge_policy == "combiner"
+        or bool(repairs)
+    )
+
+
+def _not_evidence_reason(scenario: Scenario) -> str:
+    if scenario.verification == "structural":
+        return "structural"
+    return "combiner-repairs"
+
+
+def run_claim(
+    scenario: Scenario, *, repairs: Sequence[object] = (), generated: bool,
+) -> dict[str, str]:
+    """What a completed run may claim. Never ``evidence``.
+
+    ``verification: structural``, ``merge_policy: combiner``, and any recorded
+    repair are ``not-evidence`` and are not a pass. MuSig2 record counts stay
+    ``interop-only``. A bip375 run that does not declare inputs and outputs is
+    ``interop-only`` with reason ``consistency-only``.
+    """
+
+    if _not_evidence(scenario, repairs):
+        return {
+            "verification_scope": "not-evidence",
+            "reason": _not_evidence_reason(scenario),
+            "status": "completed",
+        }
     if scenario.suite == "musig2-sp":
-        return musig2_run_claim(scenario)["status"]
-    return "passed" if generated else "completed"
+        return musig2_run_claim(scenario)
+    if scenario.suite == "bip375" and not declares_intent(scenario):
+        return {
+            "verification_scope": "interop-only",
+            "reason": "consistency-only",
+            "status": "completed",
+        }
+    claim = {"status": "passed" if generated else "completed"}
+    if not generated:
+        claim["reason"] = (
+            "transport and strict merge completed; finalize and verify on-chain"
+        )
+    return claim
+
+
+def check_case_status(
+    scenario: Scenario, *, generated: bool, repairs: Sequence[object] = (),
+) -> str:
+    """Status ``check`` may record. Weak modes and MuSig2 are not a pass."""
+
+    return run_claim(scenario, repairs=repairs, generated=generated)["status"]
 
 
 def external_run_claim(scenario: Scenario) -> dict[str, str]:
     """Scope fields for a run that did not bind scenario intent.
 
-    Empty when the scenario declares inputs and outputs. MuSig2 keeps its
-    own claim. Never ``evidence``.
+    Empty when a full strict bip375 scenario declares inputs and outputs and
+    no repair was recorded. Never ``evidence``.
     """
 
-    if scenario.suite == "musig2-sp":
-        claim = musig2_run_claim(scenario)
-        return {
-            "verification_scope": claim["verification_scope"],
-            "reason": claim["reason"],
-        }
-    if scenario.suite == "bip375" and not declares_intent(scenario):
-        return {
-            "verification_scope": "interop-only",
-            "reason": "consistency-only",
-        }
-    return {}
+    return _scope_fields(run_claim(scenario, generated=True))
 
 
-def check_case_reason(scenario: Scenario, *, generated: bool) -> str | None:
-    """Reason recorded beside ``check_case_status``. MuSig2 names its scope."""
+def _scope_fields(claim: dict[str, str]) -> dict[str, str]:
+    return {key: claim[key] for key in ("verification_scope", "reason") if key in claim}
 
-    claim = external_run_claim(scenario)
-    if claim:
-        return claim["reason"]
-    if generated:
-        return None
-    return "transport and strict merge completed; finalize and verify on-chain"
+
+def check_case_reason(
+    scenario: Scenario, *, generated: bool, repairs: Sequence[object] = (),
+) -> str | None:
+    """Reason recorded beside ``check_case_status``."""
+
+    return run_claim(scenario, repairs=repairs, generated=generated).get("reason")
