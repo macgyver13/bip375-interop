@@ -47,7 +47,7 @@ so tools and agents stop guessing. Detected today:
 | bitsaga-seedsigner | GitButler | |
 | seedsigner | git | branch `sp-send-support` |
 | caravan | git | branch `feat/sp-sending` |
-| embit (`/Users/macgyver/src/embit`) | git | editable install, not yet in `interop.yaml` |
+| embit (`~/src/embit`) | git | editable install, not yet in `interop.yaml` |
 
 Confirm this table before it lands in `interop.yaml`; the detection was by directory
 markers only.
@@ -110,7 +110,7 @@ past their last interop-relevant work (unrelated FROST and refactor commits), so
 were used instead, each checked for being a real, non-hidden commit before pinning.
 
 silent-pay, coldcard-firmware and spdk are pinned through a **frozen `git worktree`**
-at `<repo>-baseline` next to each live checkout (`/Users/macgyver/src/silent-pay-baseline`
+at `<repo>-baseline` next to each live checkout (`~/src/silent-pay-baseline`
 etc.), not the live path, because those checkouts are jj working copies under active
 development that must not be disturbed to take this pin. `jj`'s own tip inspection only
 ever reads `@`, so a bookmark's commit can only be pinned by checking it out somewhere
@@ -192,13 +192,13 @@ Building `silent-pay-baseline` against `spdk-baseline` failed with two different
 resolved copies of `psbt_v2::Output` in the same dependency graph: `silent-pay` fetches
 a floating git branch (`musig2-working-rebase-sosthene`) directly, while `spdk`
 overrides its own equivalent dependency to a local path
-(`[patch]` to `/Users/macgyver/src/rust-psbt`). At the time this baseline was built, the
+(`[patch]` to `~/src/rust-psbt`). At the time this baseline was built, the
 live `silent-pay` and `spdk` tips did not compile against each other at all (`spdk` had
 renamed `SilentPaymentAddress` to `SilentPaymentCode`); this is an active, in-progress
 break between those two repos, unrelated to which commit is pinned.
 
 Pinned: `rust-psbt` at `8af0fc273aec642dfc0165779a2b86a30ccfcdf1` (jj change `xmy`), in a
-frozen worktree at `/Users/macgyver/src/rust-psbt-baseline`, same reasoning as the other
+frozen worktree at `~/src/rust-psbt-baseline`, same reasoning as the other
 three (the live checkout was dirty with unrelated work at the time). This pin lives
 outside `interop.lock`'s schema, which only covers `interop.yaml`'s nine named
 checkouts and has no concept of a checkout's own transitive dependencies; recorded here
@@ -211,7 +211,7 @@ moving checkouts, `spdk-baseline/Cargo.toml`'s `[patch]` path was repointed at
 `rust-psbt-baseline`, and `silent-pay-baseline/Cargo.toml` gained a matching `[patch]`
 section, since both `silent-pay` and `silent-pay-baseline` hardcode absolute paths to
 the *live* `spdk` checkout for the `psbt` and `silentpayments` crates
-(`psbt = { path = "/Users/macgyver/src/spdk/psbt" }`, both in the root and in
+(`psbt = { path = "~/src/spdk/psbt" }`, both in the root and in
 `demo/Cargo.toml`); those were also repointed at `spdk-baseline`, and `Cargo.lock` was
 regenerated. These are real, necessary content changes to the pinned worktrees, not
 build byproducts like coldcard's bech32 patch, so `silent-pay-baseline` and

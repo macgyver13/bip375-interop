@@ -6,29 +6,29 @@ artifact_root: ../artifacts
 allow_dirty: false
 checkouts:
   silent-pay:
-    path: /Users/macgyver/src/silent-pay-baseline
+    path: ~/src/silent-pay-baseline
     revision: null
   bip375-test-generator:
-    path: /Users/macgyver/src/bip375-test-generator
+    path: ~/src/bip375-test-generator
     revision: null
   coldcard:
-    path: /Users/macgyver/src/coldcard-firmware-baseline
+    path: ~/src/coldcard-firmware-baseline
     revision: null
   jade:
-    path: /Users/macgyver/src/Jade
+    path: ~/src/Jade
     revision: null
   seedsigner:
-    path: /Users/macgyver/src/seedsigner
+    path: ~/src/seedsigner
     revision: null
   bitsaga-seedsigner:
-    path: /Users/macgyver/src/bitsaga-seedsigner
+    path: ~/src/bitsaga-seedsigner
     revision: null
   caravan:
-    path: /Users/macgyver/src/caravan
+    path: ~/src/caravan
     revision: null
   spdk:
-    path: /Users/macgyver/src/spdk-baseline
+    path: ~/src/spdk-baseline
     revision: null
   embit:
-    path: /Users/macgyver/src/embit
+    path: ~/src/embit
     revision: null

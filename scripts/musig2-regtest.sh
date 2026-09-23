@@ -34,8 +34,8 @@ for bin in "$BITCOIND" "$BITCOIN_CLI"; do
 done
 
 SILENT_PAY=${SILENT_PAY:-$(python3 - "$CONFIG" <<'PY'
-import sys, yaml
-print(yaml.safe_load(open(sys.argv[1]))["checkouts"]["silent-pay"]["path"])
+import os, sys, yaml
+print(os.path.expanduser(yaml.safe_load(open(sys.argv[1]))["checkouts"]["silent-pay"]["path"]))
 PY
 )}
 
