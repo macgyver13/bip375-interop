@@ -30,7 +30,13 @@ from .worker import WorkerClient
 from .smoke import run_coldcard_smoke, run_jade_smoke
 from .fixtures import build_bip375_fixture
 from .treasury import build_treasury_descriptor, build_wallet_toml
-from .verification import verify_bip375_completion, verify_musig2_sp_completion
+from .verification import (
+    check_case_reason,
+    check_case_status,
+    musig2_run_claim,
+    verify_bip375_completion,
+    verify_musig2_sp_completion,
+)
 
 
 def _add_signer_order_args(subparser: argparse.ArgumentParser) -> None:
@@ -184,6 +190,16 @@ def _run_validators(config, scenario, run_artifacts) -> list[dict]:
     return records
 
 
+def _verification_fields(scenario) -> dict:
+    if scenario.suite != "musig2-sp":
+        return {}
+    claim = musig2_run_claim(scenario)
+    return {
+        "verification_scope": claim["verification_scope"],
+        "reason": claim["reason"],
+    }
+
+
 def _run_generated_scenario(config, scenario, signer_order: tuple[str, ...] | None = None) -> tuple[Path, Path, int]:
     """Run one generated BIP-375 scenario with durable evidence on failure."""
 
@@ -210,6 +226,7 @@ def _run_generated_scenario(config, scenario, signer_order: tuple[str, ...] | No
             "merge_policy": scenario.merge_policy,
             "repairs": list(repairs),
             "validators": validators,
+            **_verification_fields(scenario),
         })
         return run_artifacts.path / "final.psbt", manifest, len(final_psbt)
     except Exception as exc:
@@ -219,6 +236,7 @@ def _run_generated_scenario(config, scenario, signer_order: tuple[str, ...] | No
             "status": "failed",
             "error": str(exc),
             "checkouts": [asdict(state) for state in states],
+            **_verification_fields(scenario),
         })
         raise
     finally:
@@ -270,6 +288,7 @@ def _run_psbt_scenario(
             "merge_policy": scenario.merge_policy,
             "repairs": list(repairs),
             "validators": validators,
+            **_verification_fields(scenario),
         })
         return run_artifacts.path / "final.psbt", manifest, len(final_psbt)
     except Exception as exc:
@@ -279,6 +298,7 @@ def _run_psbt_scenario(
             "status": "failed",
             "error": str(exc),
             "checkouts": [asdict(state) for state in states],
+            **_verification_fields(scenario),
         })
         raise
     finally:
@@ -407,14 +427,20 @@ def main(argv: list[str] | None = None) -> int:
                 try:
                     if entry.runnable_generated:
                         _, manifest, _ = _run_generated_scenario(config, entry.scenario)
-                        batch.add(CaseResult(entry.scenario.name, "passed", artifact=str(manifest)))
+                        batch.add(CaseResult(
+                            entry.scenario.name,
+                            check_case_status(entry.scenario, generated=True),
+                            check_case_reason(entry.scenario, generated=True),
+                            str(manifest),
+                        ))
                     elif not psbt_path.is_file():
                         batch.add(CaseResult(entry.scenario.name, "failed", f"PSBT is missing: {psbt_path}"))
                     else:
                         _, manifest, _ = _run_psbt_scenario(config, entry.scenario, psbt_path)
                         batch.add(CaseResult(
-                            entry.scenario.name, "completed",
-                            "transport and strict merge completed; finalize and verify on-chain",
+                            entry.scenario.name,
+                            check_case_status(entry.scenario, generated=False),
+                            check_case_reason(entry.scenario, generated=False),
                             str(manifest),
                         ))
                 except InteropError as exc:
