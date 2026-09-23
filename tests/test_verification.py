@@ -12,6 +12,7 @@ from bip375_interop.verification import (
     check_case_status,
     expected_sp_output_script,
     musig2_run_claim,
+    require_input_utxos,
     verify_bip375_completion,
     verify_musig2_sp_completion,
 )
@@ -26,7 +27,7 @@ def _single_owner_scenario(*, verification: str = "full") -> Scenario:
             {"owner": "a", "type": "p2tr", "amount_sat": 20_000},
             {"owner": "a", "type": "sp-spend", "amount_sat": 30_000},
         ],
-        "outputs": [{"type": "silent-payment", "amount_sat": 55_000}],
+        "outputs": [{"type": "silent-payment", "recipient_id": "recipient-a", "amount_sat": 55_000}],
         "verification": verification,
     })
 
@@ -224,6 +225,38 @@ def test_plain_output_does_not_require_a_global_share():
     verify_bip375_completion(scenario, psbt.serialize())
 
 
+@pytest.mark.parametrize("input_type", ["p2wpkh", "p2tr", "sp-spend"])
+def test_completion_check_rejects_valid_signature_from_wrong_owner(input_type):
+    from dataclasses import replace
+
+    from embit import bip32, bip39
+    from embit.psbt import SIGHASH, derive_hdkey
+    from embit.silent_payments import SilentPaymentsPSBT
+    from embit.silent_payments.signing import match_sp_spend_base
+
+    scenario = Scenario.from_dict({
+        "name": "plain", "suite": "bip375", "network": "regtest",
+        "signers": [
+            {"name": "a", "backend": "coldcard", "seed_id": "test-a"},
+            {"name": "b", "backend": "jade", "seed_id": "test-b"},
+        ],
+        "inputs": [{"owner": "a", "type": input_type, "amount_sat": 10_000}],
+        "outputs": [{"type": "p2wpkh", "amount_sat": 9_000}],
+    })
+    psbt = SilentPaymentsPSBT.parse(build_bip375_fixture(scenario))
+    root = bip32.HDKey.from_seed(bip39.mnemonic_to_seed(mnemonic_for("test-a")))
+    psbt.sign_with(root, sighash=SIGHASH.ALL)
+    if input_type == "sp-spend":
+        base = match_sp_spend_base(psbt.inputs[0], root, root.my_fingerprint, derive_hdkey)
+        psbt.sign_input_with_sp_tweak(base, 0, sighash=SIGHASH.ALL)
+    signed = psbt.serialize()
+    verify_bip375_completion(scenario, signed)
+
+    wrong_owner = replace(scenario, inputs=({**scenario.inputs[0], "owner": "b"},))
+    with pytest.raises(VerificationError, match="does not belong to scenario owner 'b'"):
+        verify_bip375_completion(wrong_owner, signed)
+
+
 def test_completion_check_rejects_noop_signer():
     """A resolver that resolves the output but a signer that adds nothing must fail."""
     scenario = _single_owner_scenario()
@@ -274,7 +307,7 @@ def test_expected_sp_output_script_matches_independent_derivation():
             {"owner": "a", "type": "p2wpkh", "amount_sat": 10_000},
             {"owner": "b", "type": "p2tr", "amount_sat": 20_000},
         ],
-        "outputs": [{"type": "silent-payment", "amount_sat": 25_000}],
+        "outputs": [{"type": "silent-payment", "recipient_id": "recipient-a", "amount_sat": 25_000}],
     })
     raw = build_bip375_fixture(scenario)
     epsbt = SilentPaymentsPSBT.parse(raw)
@@ -313,7 +346,7 @@ def _per_input_scenario() -> Scenario:
             {"owner": "a", "type": "p2wpkh", "amount_sat": 10_000},
             {"owner": "b", "type": "p2tr", "amount_sat": 20_000},
         ],
-        "outputs": [{"type": "silent-payment", "amount_sat": 25_000}],
+        "outputs": [{"type": "silent-payment", "recipient_id": "recipient-a", "amount_sat": 25_000}],
     })
 
 
@@ -520,3 +553,130 @@ def test_musig2_record_match_is_not_a_pass():
         "verification_scope": "interop-only",
         "reason": "structural-musig2",
     }
+
+
+def test_completion_check_rejects_output_count_mismatch():
+    from dataclasses import replace
+
+    scenario = _single_owner_scenario()
+    signed = _fully_signed_single_owner(scenario)
+    other = replace(scenario, outputs=scenario.outputs + ({"type": "p2wpkh", "amount_sat": 1},))
+    with pytest.raises(VerificationError, match="output count"):
+        verify_bip375_completion(other, signed)
+
+
+def test_completion_check_rejects_amount_mismatch():
+    from dataclasses import replace
+
+    scenario = _single_owner_scenario()
+    signed = _fully_signed_single_owner(scenario)
+    output = dict(scenario.outputs[0])
+    output["amount_sat"] = 1
+    other = replace(scenario, outputs=(output,))
+    with pytest.raises(VerificationError, match="output 0 amount"):
+        verify_bip375_completion(other, signed)
+
+
+def test_completion_check_rejects_a_recipient_that_differs_from_the_scenario():
+    from dataclasses import replace
+
+    scenario = _single_owner_scenario()
+    signed = _fully_signed_single_owner(scenario)
+    output = dict(scenario.outputs[0])
+    output["recipient_id"] = "recipient-b"
+    other = replace(scenario, outputs=(output,))
+    with pytest.raises(VerificationError, match="recipient_id 'recipient-b'"):
+        verify_bip375_completion(other, signed)
+
+
+def test_completion_check_rejects_input_amount_mismatch():
+    from dataclasses import replace
+
+    scenario = _single_owner_scenario()
+    signed = _fully_signed_single_owner(scenario)
+    inputs = [dict(item) for item in scenario.inputs]
+    inputs[0]["amount_sat"] = 1
+    other = replace(scenario, inputs=tuple(inputs))
+    with pytest.raises(VerificationError, match="input 0 amount"):
+        verify_bip375_completion(other, signed)
+
+
+def test_generated_fixture_declares_its_utxo_source():
+    scenario = _single_owner_scenario()
+    assert require_input_utxos(build_bip375_fixture(scenario)) == "declared"
+
+
+def test_pre_round_check_rejects_an_input_without_a_utxo():
+    raw = PsbtV2(
+        PsbtMap((
+            PsbtEntry(b"\xfb", (2).to_bytes(4, "little")),
+            PsbtEntry(b"\x02", (2).to_bytes(4, "little")),
+            PsbtEntry(b"\x04", b"\x01"),
+            PsbtEntry(b"\x05", b"\x01"),
+        )),
+        (PsbtMap((
+            PsbtEntry(b"\x0e", b"\x11" * 32),
+            PsbtEntry(b"\x0f", b"\x00" * 4),
+        )),),
+        (PsbtMap((
+            PsbtEntry(b"\x03", (1).to_bytes(8, "little")),
+            PsbtEntry(b"\x04", b"\x00"),
+        )),),
+    ).serialize()
+    with pytest.raises(VerificationError, match="missing witness_utxo and non_witness_utxo"):
+        require_input_utxos(raw)
+
+
+def test_non_witness_utxo_must_match_the_selected_output():
+    from embit.script import Script
+    from embit.transaction import Transaction, TransactionInput, TransactionOutput
+
+    script = Script(b"\x00\x14" + b"\x11" * 20)
+    output = TransactionOutput(50_000, script)
+    tx = Transaction(version=2, vin=[TransactionInput(b"\xab" * 32, 1)], vout=[output])
+    prev = bytes(reversed(tx.txid()))
+    witness = output.serialize()
+
+    def build(witness_value: bytes) -> bytes:
+        return PsbtV2(
+            PsbtMap((
+                PsbtEntry(b"\xfb", (2).to_bytes(4, "little")),
+                PsbtEntry(b"\x02", (2).to_bytes(4, "little")),
+                PsbtEntry(b"\x04", b"\x01"),
+                PsbtEntry(b"\x05", b"\x01"),
+            )),
+            (PsbtMap((
+                PsbtEntry(b"\x0e", prev),
+                PsbtEntry(b"\x0f", (0).to_bytes(4, "little")),
+                PsbtEntry(b"\x00", tx.serialize()),
+                PsbtEntry(b"\x01", witness_value),
+            )),),
+            (PsbtMap((
+                PsbtEntry(b"\x03", (1).to_bytes(8, "little")),
+                PsbtEntry(b"\x04", b"\x00"),
+            )),),
+        ).serialize()
+
+    assert require_input_utxos(build(witness)) == "non_witness_utxo"
+    flipped = bytearray(witness)
+    flipped[0] ^= 0x01
+    with pytest.raises(VerificationError, match="does not match"):
+        require_input_utxos(build(bytes(flipped)))
+
+
+def test_external_run_without_declared_intent_is_not_evidence():
+    from bip375_interop.cli import _verification_fields
+
+    scenario = Scenario.from_dict({
+        "name": "external",
+        "suite": "bip375",
+        "network": "regtest",
+        "signers": [{"name": "a", "backend": "coldcard", "seed_id": "test-a"}],
+    })
+    assert check_case_status(scenario, generated=False) == "completed"
+    assert check_case_reason(scenario, generated=False) == "consistency-only"
+    fields = _verification_fields(scenario)
+    assert fields == {"verification_scope": "interop-only", "reason": "consistency-only"}
+    assert "evidence" not in fields.values()
+    assert check_case_reason(_single_owner_scenario(), generated=True) is None
+    assert _verification_fields(_single_owner_scenario()) == {}

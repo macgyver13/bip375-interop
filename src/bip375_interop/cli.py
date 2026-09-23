@@ -33,7 +33,8 @@ from .treasury import build_treasury_descriptor, build_wallet_toml
 from .verification import (
     check_case_reason,
     check_case_status,
-    musig2_run_claim,
+    external_run_claim,
+    require_input_utxos,
     verify_bip375_completion,
     verify_musig2_sp_completion,
 )
@@ -191,13 +192,13 @@ def _run_validators(config, scenario, run_artifacts) -> list[dict]:
 
 
 def _verification_fields(scenario) -> dict:
-    if scenario.suite != "musig2-sp":
-        return {}
-    claim = musig2_run_claim(scenario)
-    return {
-        "verification_scope": claim["verification_scope"],
-        "reason": claim["reason"],
-    }
+    return external_run_claim(scenario)
+
+
+def _with_utxo_source(payload: dict, utxo_source: str | None) -> dict:
+    if utxo_source is None:
+        return payload
+    return {**payload, "utxo_source": utxo_source}
 
 
 def _run_generated_scenario(config, scenario, signer_order: tuple[str, ...] | None = None) -> tuple[Path, Path, int]:
@@ -205,9 +206,11 @@ def _run_generated_scenario(config, scenario, signer_order: tuple[str, ...] | No
 
     run_artifacts = ArtifactRun(config.artifact_root, scenario.name)
     workers, states = {}, []
+    utxo_source = None
     try:
         workers, states = _start_workers(config, scenario, run_artifacts)
         initial_psbt = build_bip375_fixture(scenario)
+        utxo_source = require_input_utxos(initial_psbt)
         rounds = scenario_rounds(scenario)
         if signer_order is not None:
             rounds = _reorder_rounds(rounds, signer_order)
@@ -216,7 +219,7 @@ def _run_generated_scenario(config, scenario, signer_order: tuple[str, ...] | No
         )
         verify_bip375_completion(scenario, final_psbt)
         validators = _run_validators(config, scenario, run_artifacts)
-        manifest = run_artifacts.finalize({
+        manifest = run_artifacts.finalize(_with_utxo_source({
             "scenario": scenario.name,
             "suite": scenario.suite,
             "signers": [asdict(signer) for signer in scenario.signers],
@@ -227,17 +230,17 @@ def _run_generated_scenario(config, scenario, signer_order: tuple[str, ...] | No
             "repairs": list(repairs),
             "validators": validators,
             **_verification_fields(scenario),
-        })
+        }, utxo_source))
         return run_artifacts.path / "final.psbt", manifest, len(final_psbt)
     except Exception as exc:
-        run_artifacts.finalize({
+        run_artifacts.finalize(_with_utxo_source({
             "scenario": scenario.name,
             "suite": scenario.suite,
             "status": "failed",
             "error": str(exc),
             "checkouts": [asdict(state) for state in states],
             **_verification_fields(scenario),
-        })
+        }, utxo_source))
         raise
     finally:
         for worker in workers.values():
@@ -251,6 +254,7 @@ def _run_psbt_scenario(
 
     run_artifacts = ArtifactRun(config.artifact_root, scenario.name)
     workers, states = {}, []
+    utxo_source = None
     try:
         suite_config = get_suite(scenario.suite).validate(scenario)
         descriptor = None
@@ -262,6 +266,7 @@ def _run_psbt_scenario(
             )
         workers, states = _start_workers(config, scenario, run_artifacts, descriptor=descriptor)
         psbt_bytes = psbt_path.read_bytes()
+        utxo_source = require_input_utxos(psbt_bytes)
         musig2_hook = (
             (lambda phase, snapshot: verify_musig2_sp_completion(scenario, phase, snapshot))
             if scenario.suite == "musig2-sp" else None
@@ -276,7 +281,7 @@ def _run_psbt_scenario(
         if scenario.suite == "bip375":
             verify_bip375_completion(scenario, final_psbt)
         validators = _run_validators(config, scenario, run_artifacts)
-        manifest = run_artifacts.finalize({
+        manifest = run_artifacts.finalize(_with_utxo_source({
             "scenario": scenario.name,
             "suite": scenario.suite,
             "input_psbt": str(psbt_path),
@@ -289,17 +294,17 @@ def _run_psbt_scenario(
             "repairs": list(repairs),
             "validators": validators,
             **_verification_fields(scenario),
-        })
+        }, utxo_source))
         return run_artifacts.path / "final.psbt", manifest, len(final_psbt)
     except Exception as exc:
-        run_artifacts.finalize({
+        run_artifacts.finalize(_with_utxo_source({
             "scenario": scenario.name,
             "suite": scenario.suite,
             "status": "failed",
             "error": str(exc),
             "checkouts": [asdict(state) for state in states],
             **_verification_fields(scenario),
-        })
+        }, utxo_source))
         raise
     finally:
         for worker in workers.values():
@@ -399,6 +404,10 @@ def main(argv: list[str] | None = None) -> int:
                             "scenario": entry.scenario.name,
                             "path": str(entry.path),
                             "validators": list(entry.scenario.validators),
+                            "psbt": (
+                                str(bindings[entry.scenario.name])
+                                if entry.scenario.name in bindings else None
+                            ),
                             "status": (
                                 "selected" if entry.runnable_generated or entry.scenario.name in bindings
                                 else "blocked"

@@ -8,7 +8,7 @@ from typing import Any, Callable, Mapping, Sequence
 
 from .artifacts import ArtifactRun
 from .models import Scenario
-from .psbt_maps import DiffSummary, merge_psbts, parse_psbt, semantic_diff
+from .psbt_maps import DiffSummary, _encode_compact_size, merge_psbts, parse_psbt, semantic_diff
 from .verification import VerificationError
 from .worker import WorkerClient, WorkerStepResult
 
@@ -20,6 +20,15 @@ class Round:
 
 
 _SIGNATURE_FIELDS = {"partial_signature", "tap_key_signature"}
+_UTXO_FIELDS = {"witness_utxo", "non_witness_utxo"}
+_SECURITY_FIELDS = {
+    "input": _SIGNATURE_FIELDS | _UTXO_FIELDS | {
+        "sighash_type", "final_scriptsig", "final_scriptwitness",
+        "sp_ecdh_share", "sp_dleq",
+    },
+    "output": {"script", "sp_v0_info"},
+    "global": {"sp_ecdh_share", "sp_dleq", "tx_modifiable"},
+}
 
 
 def run_rounds(
@@ -39,12 +48,12 @@ def run_rounds(
     repairs the merge made (always empty under ``strict``).
 
     When ``scenario`` is given, each step's diff is checked against what its
-    phase requires of that signer's own inputs (a share and no signature
-    while contributing, a signature while signing) -- the phase name passed
-    to ``process_psbt`` is purely local bookkeeping for this, never part of
-    what reaches the device under test. ``on_round_complete``, when given, is
-    called with the round's name and the merged PSBT once every signer in
-    that round has contributed.
+    phase requires of that signer: a share and DLEQ, and no signature, output
+    script, or witness UTXO, while contributing; a signature only on an owned
+    input while signing. The phase name passed to ``process_psbt`` is purely
+    local bookkeeping for this, never part of what reaches the device under
+    test. ``on_round_complete``, when given, is called with the round's name
+    and the merged PSBT once every signer in that round has contributed.
     """
     current = initial_psbt
     artifacts.write("00-initial.psbt", current)
@@ -82,6 +91,86 @@ def run_rounds(
     return current, tuple(repairs)
 
 
+def _global_share_phase(scenario: Scenario) -> bool:
+    """Single-owner and explicit global runs write the global share."""
+
+    owners = {item.get("owner") for item in scenario.inputs}
+    mode = scenario.suite_config.get("contribution_mode", "per-input")
+    return mode == "global" or len(owners) <= 1
+
+
+def _witness(*items: bytes) -> bytes:
+    return _encode_compact_size(len(items)) + b"".join(
+        _encode_compact_size(len(item)) + item for item in items
+    )
+
+
+def _signature_witnesses(diff: DiffSummary, index: int) -> set[bytes]:
+    """Final witnesses made of exactly a signature added on this input in this step."""
+
+    stacks = set()
+    for change in diff.added:
+        if change.scope != "input" or change.index != index:
+            continue
+        if change.field == "tap_key_signature":
+            stacks.add(_witness(bytes.fromhex(change.after_hex)))
+        elif change.field == "partial_signature":
+            pubkey = bytes.fromhex(change.key_hex)[1:]
+            stacks.add(_witness(bytes.fromhex(change.after_hex), pubkey))
+    return stacks
+
+
+def _addition_allowed(
+    scenario: Scenario, phase: str, owned: set[int], change, diff: DiffSummary
+) -> bool:
+    """Security-relevant additions this phase is supposed to make.
+
+    Proprietary and unknown fields are not in this set and stay additive.
+    """
+
+    if change.scope == "input" and change.field in _SIGNATURE_FIELDS:
+        return phase in {"resolve-sign", "sign"} and change.index in owned
+    # A signer that also finalizes (SeedSigner's embit, on taproot inputs) may
+    # add a final witness, but only one carrying the signature it just added,
+    # since verification checks the signature and the witness is what is broadcast.
+    if change.scope == "input" and change.field == "final_scriptwitness":
+        return (
+            phase in {"resolve-sign", "sign"}
+            and change.index in owned
+            and bytes.fromhex(change.after_hex) in _signature_witnesses(diff, change.index)
+        )
+    if change.scope == "input" and change.field in {"sp_ecdh_share", "sp_dleq"}:
+        if phase == "contribute" and change.index in owned:
+            return True
+        # The resolving signer has no contribute round, so their share lands here.
+        return (
+            phase == "resolve-sign"
+            and change.index in owned
+            and not _global_share_phase(scenario)
+        )
+    if change.scope == "output" and change.field == "script":
+        return phase == "resolve-sign"
+    if change.scope == "global" and change.field in {"sp_ecdh_share", "sp_dleq"}:
+        return phase == "resolve-sign" and _global_share_phase(scenario)
+    return False
+
+
+def _reject_security_addition(signer: str, phase: str, change) -> None:
+    if change.scope == "input" and change.field in _SIGNATURE_FIELDS:
+        raise VerificationError(
+            f"signer {signer!r} added a signature on unowned input {change.index} "
+            f"during the {phase} phase"
+        )
+    if change.field in _UTXO_FIELDS:
+        raise VerificationError(
+            f"signer {signer!r} added a witness UTXO during the {phase} phase"
+        )
+    where = change.scope if change.index is None else f"{change.scope} {change.index}"
+    raise VerificationError(
+        f"signer {signer!r} added {where} {change.field} during the {phase} phase"
+    )
+
+
 def _assert_phase_contract(
     scenario: Scenario, phase: str, signer: str, diff: DiffSummary
 ) -> None:
@@ -90,28 +179,51 @@ def _assert_phase_contract(
     owned = {
         index for index, item in enumerate(scenario.inputs) if item.get("owner") == signer
     }
-    if not owned:
-        return
-    added_signature = any(
-        change.scope == "input" and change.index in owned and change.field in _SIGNATURE_FIELDS
-        for change in diff.added
-    )
-    added_share = any(
-        change.scope == "input" and change.index in owned and change.field == "sp_ecdh_share"
-        for change in diff.added
-    )
-    if phase == "contribute":
-        if added_signature:
+    for change in diff.added:
+        fields = _SECURITY_FIELDS.get(change.scope)
+        if fields is None or change.field not in fields:
+            continue
+        if _addition_allowed(scenario, phase, owned, change, diff):
+            continue
+        if change.scope == "input" and change.field in _SIGNATURE_FIELDS and phase == "contribute":
+            if change.index not in owned:
+                raise VerificationError(
+                    f"signer {signer!r} added a signature on unowned input {change.index} "
+                    "during the contribute phase"
+                )
             raise VerificationError(
                 f"signer {signer!r} added a signature during the contribute phase"
             )
-        if not added_share:
-            raise VerificationError(
-                f"signer {signer!r} did not add a Silent Payment ECDH share during "
-                "the contribute phase"
-            )
-    elif not added_signature:
-        raise VerificationError(f"signer {signer!r} did not add a signature during the {phase} phase")
+        _reject_security_addition(signer, phase, change)
+    if phase == "contribute":
+        if not owned:
+            return
+        for index in sorted(owned):
+            added = {
+                change.field
+                for change in diff.added
+                if change.scope == "input" and change.index == index
+            }
+            if "sp_ecdh_share" not in added:
+                raise VerificationError(
+                    f"signer {signer!r} did not add a Silent Payment ECDH share during "
+                    "the contribute phase"
+                )
+            if "sp_dleq" not in added:
+                raise VerificationError(
+                    f"signer {signer!r} did not add a Silent Payment DLEQ proof during "
+                    "the contribute phase"
+                )
+        return
+    if not owned:
+        return
+    if not any(
+        change.scope == "input" and change.index in owned and change.field in _SIGNATURE_FIELDS
+        for change in diff.added
+    ):
+        raise VerificationError(
+            f"signer {signer!r} did not add a signature during the {phase} phase"
+        )
 
 
 def _story_text(story: Mapping[str, str]) -> bytes:

@@ -23,7 +23,7 @@ def test_generated_fixture_is_unresolved_and_has_one_owned_input_per_signer() ->
             {"owner": "one", "type": "p2wpkh", "amount_sat": 100_000},
             {"owner": "two", "type": "p2wpkh", "amount_sat": 110_000},
         ],
-        "outputs": [{"type": "silent-payment", "amount_sat": 209_000}],
+        "outputs": [{"type": "silent-payment", "recipient_id": "recipient-a", "amount_sat": 209_000}],
     })
 
     psbt = parse_psbt(build_bip375_fixture(scenario))
@@ -50,7 +50,7 @@ def test_generated_fixture_supports_p2tr_inputs() -> None:
             {"owner": "one", "type": "p2wpkh", "amount_sat": 100_000},
             {"owner": "two", "type": "p2tr", "amount_sat": 110_000},
         ],
-        "outputs": [{"type": "silent-payment", "amount_sat": 209_000}],
+        "outputs": [{"type": "silent-payment", "recipient_id": "recipient-a", "amount_sat": 209_000}],
     })
 
     psbt = parse_psbt(build_bip375_fixture(scenario))
@@ -103,7 +103,7 @@ def test_generated_fixture_supports_sighash_default_on_p2tr_input() -> None:
         "network": "regtest",
         "signers": [{"name": "one", "backend": "coldcard", "seed_id": "test-a"}],
         "inputs": [{"owner": "one", "type": "p2tr", "amount_sat": 100_000, "sighash": "default"}],
-        "outputs": [{"type": "silent-payment", "amount_sat": 90_000}],
+        "outputs": [{"type": "silent-payment", "recipient_id": "recipient-a", "amount_sat": 90_000}],
     })
 
     psbt = parse_psbt(build_bip375_fixture(scenario))
@@ -135,7 +135,7 @@ def test_generated_fixture_rejects_unknown_sighash_value() -> None:
         "network": "regtest",
         "signers": [{"name": "one", "backend": "coldcard", "seed_id": "test-a"}],
         "inputs": [{"owner": "one", "type": "p2tr", "amount_sat": 100_000, "sighash": "none"}],
-        "outputs": [{"type": "silent-payment", "amount_sat": 90_000}],
+        "outputs": [{"type": "silent-payment", "recipient_id": "recipient-a", "amount_sat": 90_000}],
     })
 
     with pytest.raises(ConfigurationError, match="sighash"):
@@ -169,10 +169,58 @@ def test_generated_fixture_supports_global_contribution_mode() -> None:
         "signers": [{"name": "one", "backend": "seedsigner", "seed_id": "test-a"}],
         "suite_config": {"contribution_mode": "global"},
         "inputs": [{"owner": "one", "type": "p2wpkh", "amount_sat": 100_000}],
-        "outputs": [{"type": "silent-payment", "amount_sat": 99_000}],
+        "outputs": [{"type": "silent-payment", "recipient_id": "recipient-a", "amount_sat": 99_000}],
     })
 
     psbt = parse_psbt(build_bip375_fixture(scenario))
 
     assert len(psbt.inputs) == 1
     assert psbt.outputs[0].get(b"\x09") is not None
+
+
+def test_generated_fixture_uses_the_named_recipient() -> None:
+    pytest.importorskip("embit")
+    from bip375_interop.verification import recipient_sp_info
+
+    scenario = Scenario.from_dict({
+        "name": "named",
+        "suite": "bip375",
+        "network": "regtest",
+        "signers": [{"name": "one", "backend": "coldcard", "seed_id": "test-a"}],
+        "inputs": [{"owner": "one", "type": "p2wpkh", "amount_sat": 100_000}],
+        "outputs": [{"type": "silent-payment", "recipient_id": "recipient-a", "amount_sat": 90_000}],
+    })
+
+    psbt = parse_psbt(build_bip375_fixture(scenario))
+
+    assert psbt.outputs[0].get(b"\x09") == recipient_sp_info("recipient-a")
+
+
+def test_generated_fixture_rejects_a_missing_recipient_id() -> None:
+    pytest.importorskip("embit")
+    scenario = Scenario.from_dict({
+        "name": "missing",
+        "suite": "bip375",
+        "network": "regtest",
+        "signers": [{"name": "one", "backend": "coldcard", "seed_id": "test-a"}],
+        "inputs": [{"owner": "one", "type": "p2wpkh", "amount_sat": 100_000}],
+        "outputs": [{"type": "silent-payment", "amount_sat": 90_000}],
+    })
+
+    with pytest.raises(ConfigurationError, match="recipient_id"):
+        build_bip375_fixture(scenario)
+
+
+def test_generated_fixture_rejects_an_unknown_recipient_id() -> None:
+    pytest.importorskip("embit")
+    scenario = Scenario.from_dict({
+        "name": "unknown",
+        "suite": "bip375",
+        "network": "regtest",
+        "signers": [{"name": "one", "backend": "coldcard", "seed_id": "test-a"}],
+        "inputs": [{"owner": "one", "type": "p2wpkh", "amount_sat": 100_000}],
+        "outputs": [{"type": "silent-payment", "recipient_id": "nobody", "amount_sat": 90_000}],
+    })
+
+    with pytest.raises(ConfigurationError, match="nobody"):
+        build_bip375_fixture(scenario)

@@ -2,16 +2,11 @@
 
 from __future__ import annotations
 
-from binascii import unhexlify
-
 from .errors import ConfigurationError
 from .models import Scenario
 from .test_seeds import mnemonic_for
+from .verification import expected_plain_output_script, known_recipient_ids, recipient_keys
 
-
-_SCAN_HEX = "027a487fc19fb769877b8742d6ea18118f3c4e72b1ea8c6de602a7ad4a41dbe068"
-_SPEND_HEX = "0361e1b1e9de5e42cb2007f7ca54b9e0d57ed13938fad56d3f19e57513a8fce039"
-_DEST_PUBKEY_HEX = "0230282f721a0742d05986818c9cbd71757394d4c6602cd6814d5647e50b57e28c"
 _BIP84_TEST_PATH = (0x80000054, 0x80000001, 0x80000000)
 _BIP86_TEST_PATH = (0x80000056, 0x80000001, 0x80000000)
 # BIP-376 spend key: one fixed key per account, per both Coldcard's
@@ -139,17 +134,22 @@ def build_bip375_fixture(scenario: Scenario) -> bytes:
     if not isinstance(amount, int) or amount <= 0 or amount >= total:
         raise ConfigurationError("output amount must be positive and below input total")
     if output_type == "silent-payment":
+        recipient_id = output.get("recipient_id")
+        try:
+            scan, spend = recipient_keys(recipient_id)
+        except KeyError:
+            raise ConfigurationError(
+                "silent-payment output recipient_id must be one of "
+                f"{list(known_recipient_ids())}, got {recipient_id!r}"
+            ) from None
         destination = SPOutputScope()
         destination.value = amount
         destination.sp_data = SilentPaymentData(
-            ec.PublicKey.parse(unhexlify(_SCAN_HEX)),
-            ec.PublicKey.parse(unhexlify(_SPEND_HEX)),
+            ec.PublicKey.parse(scan),
+            ec.PublicKey.parse(spend),
         )
     else:
-        dest_pubkey = ec.PublicKey.parse(unhexlify(_DEST_PUBKEY_HEX))
-        dest_script = (
-            script.p2wpkh(dest_pubkey) if output_type == "p2wpkh" else script.p2tr(dest_pubkey)
-        )
+        dest_script = script.Script(expected_plain_output_script(output_type))
         destination = SPOutputScope(vout=TransactionOutput(amount, dest_script))
     psbt.add_output(destination)
     return psbt.serialize()

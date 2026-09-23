@@ -28,7 +28,7 @@ SCENARIO = {
         {"owner": "one", "type": "p2wpkh", "amount_sat": 100_000},
         {"owner": "two", "type": "p2wpkh", "amount_sat": 110_000},
     ],
-    "outputs": [{"type": "silent-payment", "amount_sat": 209_000}],
+    "outputs": [{"type": "silent-payment", "recipient_id": "recipient-a", "amount_sat": 209_000}],
 }
 
 
