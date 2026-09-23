@@ -46,6 +46,43 @@ def _embit_problem(checkout: Checkout | None) -> str | None:
     return None
 
 
+def default_spdk_binary() -> Path:
+    """``spdk-cli`` release binary built in this repo, not in the spdk checkout."""
+
+    return Path(__file__).resolve().parents[2] / "spdk-cli" / "target" / "release" / "spdk-cli"
+
+
+def validator_build_problems(
+    config: HarnessConfig,
+    scenarios: Iterable[Scenario],
+    *,
+    spdk_binary: Path | None = None,
+) -> list[str]:
+    """Missing Caravan dist or SPDK binary. A missing build is not a skip."""
+
+    needed: dict[str, None] = {}
+    for scenario in scenarios:
+        for name in scenario.validators:
+            needed[name] = None
+    problems: list[str] = []
+    if "caravan" in needed:
+        checkout = config.checkouts.get("caravan")
+        if checkout is not None:
+            dist = checkout.path / "packages" / "caravan-psbt" / "dist" / "index.js"
+            if not dist.is_file():
+                problems.append(
+                    f"caravan: {dist} is not built (run npm ci and "
+                    "npx turbo build --filter=@caravan/psbt... in the checkout)"
+                )
+    if "spdk" in needed:
+        binary = default_spdk_binary() if spdk_binary is None else spdk_binary
+        if not binary.is_file():
+            problems.append(
+                f"spdk: {binary} is not built (run cargo build --release in {binary.parents[2]})"
+            )
+    return problems
+
+
 def run_preflight(config: HarnessConfig, scenarios: list[Scenario]) -> list[CheckoutState]:
     """Inspect every checkout the scenarios need and raise once with all problems."""
 
@@ -65,6 +102,7 @@ def run_preflight(config: HarnessConfig, scenarios: list[Scenario]) -> list[Chec
     embit_problem = _embit_problem(config.checkouts.get("embit"))
     if embit_problem:
         problems.append(embit_problem)
+    problems.extend(validator_build_problems(config, scenarios))
     if problems:
         raise InteropError("preflight failed:\n" + "\n".join(f"  - {problem}" for problem in problems))
     return states
