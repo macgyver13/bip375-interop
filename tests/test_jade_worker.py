@@ -187,3 +187,17 @@ def test_jade_worker_redirects_qemu_io_to_instance_dir(tmp_path: Path) -> None:
     assert (instance_dir / "qemu.stdout.log").is_file()
     assert (instance_dir / "qemu.stderr.log").is_file()
     worker.close()
+
+
+def test_qemu_is_found_under_idf_tools_path(tmp_path, monkeypatch):
+    from bip375_interop.jade_worker import _qemu_executable
+
+    monkeypatch.setattr("shutil.which", lambda name: None)
+    for version in ("esp_develop_9.0.0_20240606", "esp_develop_9.2.2_20250817"):
+        binary = tmp_path / "tools" / "qemu-xtensa" / version / "qemu" / "bin" / "qemu-system-xtensa"
+        binary.parent.mkdir(parents=True)
+        binary.touch()
+
+    found = _qemu_executable({"IDF_TOOLS_PATH": str(tmp_path)})
+
+    assert found == str(binary)
