@@ -47,9 +47,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends libzbar0 \
     && rm -rf /var/lib/apt/lists/* \
     && git init -q /seedsigner && cd /seedsigner \
     && git fetch -q --depth 1 ${SEEDSIGNER_REPO} ${SEEDSIGNER_REV} && git checkout -q FETCH_HEAD
-# embit's pin is the tip of notTanveer's feat/silent-payments-V2 (upstream PR #145), which
-# can move: fetch the commit. check.sh installs it into the harness venv.
-ARG EMBIT_REPO=https://github.com/notTanveer/embit.git
+# embit's pin is on the fork's feat/silent-payments-V2 (also upstream PR #145), which can
+# move: fetch the commit. check.sh installs it into the harness venv.
+ARG EMBIT_REPO=https://github.com/macgyver13/embit.git
 ARG EMBIT_REV=f18d23bd5e089693198dcaaa15429040aad6e600
 RUN git init -q /embit && cd /embit \
     && git fetch -q --depth 1 ${EMBIT_REPO} ${EMBIT_REV} && git checkout -q FETCH_HEAD
