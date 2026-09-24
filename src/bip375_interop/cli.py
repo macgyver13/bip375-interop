@@ -9,6 +9,7 @@ from dataclasses import asdict, replace
 from pathlib import Path
 
 from . import __version__
+from .fetch import fetch
 from .checkouts import inspect_checkout
 from .expectations import load_expectations
 from .preflight import backend_checkout, run_preflight
@@ -95,6 +96,9 @@ def _parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("doctor")
     sub.add_parser("pin", help="write interop.lock with the current commit id of every checkout")
+    fetch_cmd = sub.add_parser("fetch", help="clone every checkout at its lock commit and write interop.fetched.yaml")
+    fetch_cmd.add_argument("--sources", type=Path, default=Path("sources.yaml"))
+    fetch_cmd.add_argument("--checkouts-dir", type=Path, default=Path(".checkouts"))
     smoke = sub.add_parser("smoke")
     smoke.add_argument("backend", choices=("coldcard", "jade"))
     validate = sub.add_parser("validate")
@@ -503,6 +507,10 @@ def main(argv: list[str] | None = None) -> int:
             }
             write_lock(args.config.parent / LOCK_NAME, pins)
             print(json.dumps(pins, indent=2))
+            return 0
+        if args.command == "fetch":
+            out, fetched = fetch(args.config, args.sources, args.checkouts_dir)
+            print(json.dumps({"config": str(out), "fetched": fetched}, indent=2))
             return 0
         if args.command == "smoke":
             runner = run_jade_smoke if args.backend == "jade" else run_coldcard_smoke

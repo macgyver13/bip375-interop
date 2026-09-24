@@ -1,0 +1,36 @@
+# Where `fetch` clones each checkout from; each profile's interop.lock says which commit.
+# `urls` overrides a submodule's .gitmodules URL; `submodules` lists what to initialize
+# (nested paths allowed) or is `all`. Mirrors images/linux/.
+silent-pay: https://github.com/macgyver13/silent-pay.git
+coldcard:
+  url: https://github.com/macgyver13/coldcard-firmware.git
+  # These submodule commits are not on the upstream repos' refs.
+  urls:
+    external/ckcc-protocol: https://github.com/macgyver13/ckcc-protocol.git
+    external/libngu: https://github.com/macgyver13/libngu.git
+  # Only what the unix simulator needs: not libngu's esp-idf or mpy, and none of
+  # micropython's MCU or Bluetooth libraries (lwip cannot be cloned shallow).
+  submodules:
+    - external/ckcc-protocol
+    - external/libngu
+    - external/micropython
+    - external/mpy-qr
+    - external/libngu/libs/bech32
+    - external/libngu/libs/cifra
+    - external/libngu/libs/secp256k1
+    - external/micropython/lib/axtls
+    - external/micropython/lib/berkeley-db-1.xx
+    - external/micropython/lib/libffi
+    - external/micropython/lib/libhydrogen
+    - external/micropython/lib/mbedtls
+jade:
+  url: https://github.com/macgyver13/Jade.git
+  # Both jade lines' libwally commits are on the fork's branches, not upstream's.
+  urls:
+    components/libwally-core/upstream: https://github.com/macgyver13/libwally-core.git
+  submodules: all
+seedsigner: https://github.com/macgyver13/seedsigner.git
+# Only on jvgelder's feat/sp-sending; fetch takes the commit, not the branch.
+caravan: https://github.com/jvgelder/caravan.git
+spdk: https://github.com/macgyver13/spdk.git
+embit: https://github.com/macgyver13/embit.git
