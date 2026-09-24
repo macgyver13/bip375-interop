@@ -151,6 +151,43 @@ MuSig2-SP legs, run separately against `baseline/interop.yaml` with a round-1 PS
 The first leg's txid is identical to an earlier, unpinned manual run in this same
 session, which is a good sign of determinism given the same wallet seeds and treasury.
 
+### Baseline results (2026-09-23): two profiles
+
+The baseline split into a primary profile (`baseline/`, the BIP-375 line of every repo,
+`suites: [bip375]`) and a MuSig2 profile (`baseline-musig2/`, the MuSig2 line where a repo
+has one, sharing the primary `expectations.yaml`). The two locks differ only in jade and
+coldcard:
+
+| Checkout | Primary | MuSig2 |
+|---|---|---|
+| jade | `3cf19c81` (`sp-core`) | `a724e376` (`sp-musig`, rebased on `05582cf1`) |
+| coldcard | `d210635d` (`sp-core-pinned`: `silentpayments-bip375-psbt` plus the sighash and SP output fixes) | `80a27ae5` |
+| silent-pay | `bed75f5d` | `bed75f5d` |
+| spdk | `5c8a3823` | `5c8a3823` |
+
+jade, coldcard, silent-pay, spdk and caravan run from frozen worktrees
+(`~/src/Jade-sp-core`, `~/src/Jade-sp-musig`, `~/src/coldcard-firmware-sp-core`,
+`~/src/coldcard-firmware-baseline`, `~/src/silent-pay-baseline`, `~/src/spdk-baseline`,
+`~/src/caravan-baseline`), each with its own build. silent-pay and spdk now pin each other
+and rust-psbt by `rev`, so their path patches are gone.
+
+`check --project harness --exhaustive`:
+
+| Profile | Result | Report |
+|---|---|---|
+| primary | exit 0, 25 STEADY | `artifacts/batches/20260924T021602.991105Z-harness-b17d0d6b/` |
+| MuSig2 | exit 0, 26 STEADY, 4 CHANGED (the four BIP-376 jade spend scenarios, now passing) | `artifacts/batches/20260924T021052.070320Z-harness-1ecd569f/` |
+
+MuSig2-SP legs against the MuSig2 profile, both finalized, broadcast, confirmed and
+recipient-verified: aggregate-then-derive `d0d17994b34d9e046ebbc6aa0e8349385c33ee10a9a931da6c725c3b84732fbb`,
+derive-then-aggregate `f21b35f1a411038034aeaa6f46bff5b5b157de24b6989ae125e533c5b16cabc2`.
+
+Found on the way: coldcard's BIP-375 line could not sign a plain SP send until two
+`silentpayments.py` fixes moved down from the MuSig2 line (`resolve_script` for an
+unresolved SP output, clearing tx_modifiable once outputs resolve); jade's `sp-core` clears
+tx_modifiable by omitting the field, which BIP-370 allows, so strict merge now treats an
+omitted field as cleared.
+
 ### Triage: the four UNCLASSIFIED scenarios (2026-09-22)
 
 Both pairs are genuine Jade firmware findings, isolated by direct comparison against

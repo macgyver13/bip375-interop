@@ -1,9 +1,12 @@
-# Stable-pin baseline. Checkouts either point at a frozen worktree (silent-pay,
-# coldcard, spdk: their live checkouts move too fast to pin directly, and are not
-# to be disturbed) or at the same live path as ../interop.yaml, pinned by whatever
-# `pin` finds there at write time. See ../docs/regression-plan.md, "Baseline".
+# Primary profile: the BIP-375 line of every repo. Checkouts either point at a frozen
+# worktree (silent-pay, coldcard, jade, spdk: their live checkouts move too fast to pin
+# directly, and are not to be disturbed) or at the same live path as ../interop.yaml,
+# pinned by whatever `pin` finds there at write time. Jade and coldcard worktrees each
+# need their own build (flash image, simulator). See ../docs/regression-plan.md.
 artifact_root: ../artifacts
 allow_dirty: false
+# BIP-375 line only; MuSig2-SP scenarios are judged by ../baseline-musig2.
+suites: [bip375]
 checkouts:
   silent-pay:
     path: ~/src/silent-pay-baseline
@@ -12,10 +15,10 @@ checkouts:
     path: ~/src/bip375-test-generator
     revision: null
   coldcard:
-    path: ~/src/coldcard-firmware-baseline
+    path: ~/src/coldcard-firmware-sp-core
     revision: null
   jade:
-    path: ~/src/Jade
+    path: ~/src/Jade-sp-core
     revision: null
   seedsigner:
     path: ~/src/seedsigner
@@ -24,7 +27,7 @@ checkouts:
     path: ~/src/bitsaga-seedsigner
     revision: null
   caravan:
-    path: ~/src/caravan
+    path: ~/src/caravan-baseline
     revision: null
   spdk:
     path: ~/src/spdk-baseline
