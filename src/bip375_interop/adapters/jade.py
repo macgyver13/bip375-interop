@@ -38,15 +38,30 @@ class JadeAdapter:
         python_executable: str = sys.executable,
         device: str = "tcp:localhost:30121",
         runner: Runner = subprocess.run,
+        require_build: bool = True,
     ) -> None:
         self.firmware_dir = Path(firmware_dir).resolve()
         self.checkout = self.firmware_dir
-        require_checkout(
-            self.firmware_dir, ("build/flash_image.bin", "build/qemu_efuse.bin", "test_jade.py", "jadepy")
-        )
+        # require_build=False only to plan the build that makes these.
+        built = ("build/flash_image.bin", "build/qemu_efuse.bin") if require_build else ()
+        require_checkout(self.firmware_dir, (*built, "test_jade.py", "jadepy"))
         self.python_executable = python_executable
         self.device = device
         self._runner = runner
+
+    def plan_build(self) -> tuple[CommandPlan, ...]:
+        """Jade's Dockerfile.qemu steps, in an ESP-IDF environment from IDF_PATH."""
+
+        idf = '. "$IDF_PATH/export.sh" >/dev/null && '
+        return (
+            CommandPlan("jade-switch-to-qemu", ("bash", "-c", idf + "./tools/switch_to.sh qemu --dev --ci"), self.firmware_dir),
+            CommandPlan("jade-build", ("bash", "-c", idf + "idf.py all"), self.firmware_dir),
+            CommandPlan(
+                "jade-flash-image",
+                ("bash", "-c", idf + "./main/qemu/make_flash_img.sh build/flash_image.bin build/qemu_efuse.bin"),
+                self.firmware_dir,
+            ),
+        )
 
     def plan_worker(
         self, extra_env: Mapping[str, str] | None = None
