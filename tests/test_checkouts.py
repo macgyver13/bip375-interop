@@ -271,3 +271,11 @@ def test_coldcard_libngu_patch_is_a_known_byproduct_but_a_moved_commit_is_not(tm
     _commit_all(sub, "moved")
     with pytest.raises(CheckoutError, match="dirty"):
         inspect_checkout(Checkout("coldcard", repo))
+
+
+def test_a_path_without_git_or_jj_is_refused_not_resolved_upward(tmp_path: Path):
+    _committed_branch(tmp_path)
+    (tmp_path / "copy").mkdir()
+
+    with pytest.raises(CheckoutError, match="no .git or .jj"):
+        inspect_checkout(Checkout("embit", tmp_path / "copy"), allow_dirty=True)

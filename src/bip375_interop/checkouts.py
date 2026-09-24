@@ -90,6 +90,9 @@ def _require_pinned(checkout: Checkout, revision: str) -> None:
 def inspect_checkout(checkout: Checkout, allow_dirty: bool = False) -> CheckoutState:
     if not checkout.path.is_dir():
         raise CheckoutError(f"{checkout.name}: missing checkout {checkout.path}")
+    if not (checkout.path / ".git").exists() and not (checkout.path / ".jj").is_dir():
+        # Without this, git would report the commit of any repository above the path.
+        raise CheckoutError(f"{checkout.name}: {checkout.path} has no .git or .jj")
     vcs = _vcs(checkout)
     if vcs == "jj":
         revision = _jj_revision(checkout)
