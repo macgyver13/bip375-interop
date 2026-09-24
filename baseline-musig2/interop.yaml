@@ -16,8 +16,6 @@ checkouts:
     path: ~/src/coldcard-firmware-baseline
     revision: null
   jade:
-    # TODO: create with `git worktree add --detach` at the lock's jade pin (tag
-    # bip375-interop/baseline-2026-09-22), then build build/flash_image.bin there.
     path: ~/src/Jade-sp-musig
     revision: null
   seedsigner:
@@ -27,7 +25,7 @@ checkouts:
     path: ~/src/bitsaga-seedsigner
     revision: null
   caravan:
-    path: ~/src/caravan
+    path: ~/src/caravan-baseline
     revision: null
   spdk:
     path: ~/src/spdk-baseline
