@@ -32,6 +32,29 @@ signers:
     assert entries[1].reason == "no initial PSBT: store musig.psbt next to the scenario or pass --psbt"
 
 
+def test_catalog_limits_selection_to_profile_suites(tmp_path: Path):
+    (tmp_path / "plain.yaml").write_text("""
+name: plain-case
+suite: bip375
+network: regtest
+signers: [{name: jade-a, backend: jade, seed_id: test-a}]
+inputs: [{owner: jade-a, type: p2wpkh, amount_sat: 100000}]
+outputs: [{type: silent-payment, amount_sat: 99000}]
+""")
+    (tmp_path / "musig.yaml").write_text("""
+name: musig-case
+suite: musig2-sp
+network: regtest
+signers:
+  - {name: jade-a, backend: jade, seed_id: test-a}
+  - {name: jade-b, backend: jade, seed_id: test-b}
+""")
+
+    entries = select(discover(tmp_path), "harness", suites=("bip375",))
+
+    assert [entry.scenario.name for entry in entries] == ["plain-case"]
+
+
 def test_changed_files_includes_untracked_paths(tmp_path: Path, monkeypatch):
     calls = []
 
