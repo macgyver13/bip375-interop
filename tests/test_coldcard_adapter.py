@@ -37,13 +37,15 @@ def test_capabilities_and_build_plan_are_explicit(tmp_path: Path):
     assert adapter.capabilities.musig2_key_architectures == frozenset(
         {KeyArchitecture.AGGREGATE_THEN_DERIVE}
     )
-    assert [plan.argv for plan in adapter.plan_build()] == [
-        ("make", "-C", "external/micropython/mpy-cross"),
-        ("make", "-C", "unix", "setup"),
-        ("make", "-C", "unix", "ngu-setup"),
-        ("make", "-C", "unix"),
+    # unix/Makefile derives VARIANT_DIR from $(PWD), so its steps run inside unix/;
+    # `make -C unix` from the top fails with "Invalid VARIANT specified".
+    unix = adapter.firmware_dir / "unix"
+    assert [(plan.argv, plan.cwd) for plan in adapter.plan_build()] == [
+        (("make", "-C", "external/micropython/mpy-cross"), adapter.firmware_dir),
+        (("make", "setup"), unix),
+        (("make", "ngu-setup"), unix),
+        (("make",), unix),
     ]
-    assert all(plan.cwd == adapter.firmware_dir for plan in adapter.plan_build())
 
 
 def test_run_suite_uses_firmware_runner_and_external_artifacts(tmp_path: Path):
