@@ -102,13 +102,16 @@ class ColdcardAdapter:
 
     def plan_build(self) -> tuple[CommandPlan, ...]:
         """Return Coldcard's documented simulator build sequence."""
+        # unix/Makefile derives VARIANT_DIR from $(PWD), so `make -C unix` from the
+        # top of the checkout fails; its steps run inside unix/ as the README does.
+        unix = self.firmware_dir / "unix"
         commands = (
-            ("coldcard-build-mpy-cross", ("make", "-C", "external/micropython/mpy-cross")),
-            ("coldcard-setup-simulator", ("make", "-C", "unix", "setup")),
-            ("coldcard-setup-libngu", ("make", "-C", "unix", "ngu-setup")),
-            ("coldcard-build-simulator", ("make", "-C", "unix")),
+            ("coldcard-build-mpy-cross", ("make", "-C", "external/micropython/mpy-cross"), self.firmware_dir),
+            ("coldcard-setup-simulator", ("make", "setup"), unix),
+            ("coldcard-setup-libngu", ("make", "ngu-setup"), unix),
+            ("coldcard-build-simulator", ("make",), unix),
         )
-        return tuple(CommandPlan(name, argv, self.firmware_dir) for name, argv in commands)
+        return tuple(CommandPlan(name, argv, cwd) for name, argv, cwd in commands)
 
     def plan_test(
         self,
