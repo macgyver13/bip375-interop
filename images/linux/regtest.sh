@@ -12,11 +12,10 @@
 #   docker build -t bip375-sp-demo -f images/linux/sp-demo.Dockerfile images/linux
 #   docker build -t bip375-regtest -f images/linux/regtest.Dockerfile images/linux
 # Run from the repo root, mounting as for check.sh:
-#   docker run --rm -i -v "$PWD:/repo:ro" -v ~/src/embit:/embit:ro bip375-regtest \
-#     bash -s < images/linux/regtest.sh
+#   docker run --rm -i -v "$PWD:/repo:ro" bip375-regtest bash -s < images/linux/regtest.sh
 set -euo pipefail
 rm -rf /work && mkdir /work && (cd /repo && tar --exclude=./artifacts --exclude=__pycache__ -cf - .) | tar -C /work -xf -
-python3 -m venv /opt/h && /opt/h/bin/pip install -q pyyaml cbor2 pyserial && cp -r /embit /tmp/embit && /opt/h/bin/pip install -q /tmp/embit
+python3 -m venv /opt/h && /opt/h/bin/pip install -q pyyaml cbor2 pyserial && /opt/h/bin/pip install -q -e /embit
 mkdir -p /cfg /out && cat > /cfg/interop.yaml <<YAML
 artifact_root: /out/artifacts
 checkouts:

@@ -14,5 +14,11 @@ RUN case "$(uname -m)" in \
     && echo "$sum  $f" | sha256sum -c - \
     && tar -xzf $f && install -m 0755 bitcoin-${BITCOIN_VERSION}/bin/bitcoind bitcoin-${BITCOIN_VERSION}/bin/bitcoin-cli /usr/local/bin/ \
     && rm -rf $f bitcoin-${BITCOIN_VERSION}
+# embit's pin is the tip of notTanveer's feat/silent-payments-V2 (upstream PR #145), which
+# can move: fetch the commit. regtest.sh installs it into the harness venv.
+ARG EMBIT_REPO=https://github.com/notTanveer/embit.git
+ARG EMBIT_REV=f18d23bd5e089693198dcaaa15429040aad6e600
+RUN git init -q /embit && cd /embit \
+    && git fetch -q --depth 1 ${EMBIT_REPO} ${EMBIT_REV} && git checkout -q FETCH_HEAD
 COPY --from=sp-demo /sp-demo /opt/sp-demo
 ENV SP_DEMO_BIN=/opt/sp-demo
