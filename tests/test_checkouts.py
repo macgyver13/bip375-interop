@@ -223,3 +223,51 @@ def test_gitbutler_tip_change_fails_a_parent_tip_pin(tmp_path: Path):
     assert moved != first
     with pytest.raises(CheckoutError, match="expected"):
         inspect_checkout(Checkout("jade", tmp_path, revision=first))
+
+
+def _commit_all(path: Path, message: str) -> None:
+    subprocess.run(["git", "-C", str(path), "add", "-A"], check=True)
+    subprocess.run(["git", "-C", str(path), "commit", "-q", "-m", message], check=True)
+
+
+def test_jade_lock_rewrite_is_a_known_byproduct(tmp_path: Path):
+    _configure_git(tmp_path)
+    (tmp_path / "dependencies.lock.esp32").write_text("version: 5.5.5\n")
+    _commit_all(tmp_path, "base")
+    (tmp_path / "dependencies.lock.esp32").write_text("version: 5.5.4\n")
+
+    state = inspect_checkout(Checkout("jade", tmp_path))
+    assert not state.dirty
+    assert state.byproducts == ("dependencies.lock.esp32",)
+
+    # The same file is an ordinary change in any other checkout.
+    with pytest.raises(CheckoutError, match="dirty"):
+        inspect_checkout(Checkout("seedsigner", tmp_path))
+
+    # A byproduct does not excuse a real change beside it.
+    (tmp_path / "other").write_text("x")
+    with pytest.raises(CheckoutError, match="dirty"):
+        inspect_checkout(Checkout("jade", tmp_path))
+
+
+def test_coldcard_libngu_patch_is_a_known_byproduct_but_a_moved_commit_is_not(tmp_path: Path):
+    libngu = tmp_path / "libngu"
+    _committed_branch(libngu)
+    repo = tmp_path / "coldcard"
+    _configure_git(repo)
+    subprocess.run(
+        ["git", "-C", str(repo), "-c", "protocol.file.allow=always", "submodule", "add", "-q",
+         str(libngu), "external/libngu"],
+        check=True,
+    )
+    _commit_all(repo, "base")
+    sub = repo / "external" / "libngu"
+    (sub / "f").write_text("patched")
+
+    state = inspect_checkout(Checkout("coldcard", repo))
+    assert not state.dirty
+    assert state.byproducts == ("external/libngu",)
+
+    _commit_all(sub, "moved")
+    with pytest.raises(CheckoutError, match="dirty"):
+        inspect_checkout(Checkout("coldcard", repo))
