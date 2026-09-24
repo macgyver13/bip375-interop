@@ -40,7 +40,12 @@ def test_capabilities_and_build_plan_are_explicit(tmp_path: Path):
     # unix/Makefile derives VARIANT_DIR from $(PWD), so its steps run inside unix/;
     # `make -C unix` from the top fails with "Invalid VARIANT specified".
     unix = adapter.firmware_dir / "unix"
-    assert [(plan.argv, plan.cwd) for plan in adapter.plan_build()] == [
+    plans = adapter.plan_build()
+    # First the ENV venv the worker runs from, then the README's make steps.
+    assert plans[0].argv[1:] == ("-m", "venv", "ENV")
+    assert plans[1].argv == (adapter.python_executable, "-m", "pip", "install", "-q", "-r", "requirements.txt")
+    makes = [plan for plan in plans if plan.argv[0] == "make"]
+    assert [(plan.argv, plan.cwd) for plan in makes] == [
         (("make", "-C", "external/micropython/mpy-cross"), adapter.firmware_dir),
         (("make", "setup"), unix),
         (("make", "ngu-setup"), unix),

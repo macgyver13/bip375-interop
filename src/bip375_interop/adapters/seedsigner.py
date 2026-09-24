@@ -45,7 +45,8 @@ class SeedSignerAdapter:
         return (
             CommandPlan(
                 name="seedsigner-install",
-                argv=(self.python_executable, "-m", "pip", "install", "-e", "."),
+                # --no-deps: its requirements pin a different embit than the harness's.
+                argv=(self.python_executable, "-m", "pip", "install", "--no-deps", "-e", "."),
                 cwd=self.checkout_dir,
             ),
         )

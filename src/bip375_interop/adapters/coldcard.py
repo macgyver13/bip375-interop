@@ -105,7 +105,14 @@ class ColdcardAdapter:
         # unix/Makefile derives VARIANT_DIR from $(PWD), so `make -C unix` from the
         # top of the checkout fails; its steps run inside unix/ as the README does.
         unix = self.firmware_dir / "unix"
-        commands = (
+        # The ENV venv plan_worker runs; the README adds pysdl2-dll on Linux.
+        env_setup = (
+            ("coldcard-venv", (self.worker_python, "-m", "venv", "ENV"), self.firmware_dir),
+            ("coldcard-requirements", (self.python_executable, "-m", "pip", "install", "-q", "-r", "requirements.txt"), self.firmware_dir),
+        )
+        if sys.platform.startswith("linux"):
+            env_setup += (("coldcard-pysdl2", (self.python_executable, "-m", "pip", "install", "-q", "pysdl2-dll"), self.firmware_dir),)
+        commands = env_setup + (
             ("coldcard-build-mpy-cross", ("make", "-C", "external/micropython/mpy-cross"), self.firmware_dir),
             ("coldcard-setup-simulator", ("make", "setup"), unix),
             ("coldcard-setup-libngu", ("make", "ngu-setup"), unix),

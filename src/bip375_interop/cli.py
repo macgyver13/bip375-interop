@@ -9,6 +9,7 @@ from dataclasses import asdict, replace
 from pathlib import Path
 
 from . import __version__
+from .build import build, plan_builds
 from .fetch import fetch
 from .checkouts import inspect_checkout
 from .expectations import load_expectations
@@ -96,6 +97,9 @@ def _parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("doctor")
     sub.add_parser("pin", help="write interop.lock with the current commit id of every checkout")
+    build_cmd = sub.add_parser("build", help="run each checkout's build steps (plan_build)")
+    build_cmd.add_argument("only", nargs="*", help="checkout names (default: every one in the profile)")
+    build_cmd.add_argument("--dry-run", action="store_true", help="list the steps without running them")
     fetch_cmd = sub.add_parser("fetch", help="clone every checkout at its lock commit and write interop.fetched.yaml")
     fetch_cmd.add_argument("--sources", type=Path, default=Path("sources.yaml"))
     fetch_cmd.add_argument("--checkouts-dir", type=Path, default=Path(".checkouts"))
@@ -508,6 +512,15 @@ def main(argv: list[str] | None = None) -> int:
             write_lock(args.config.parent / LOCK_NAME, pins)
             print(json.dumps(pins, indent=2))
             return 0
+        if args.command == "build":
+            if args.dry_run:
+                print(json.dumps([
+                    {"checkout": name, "step": plan.name, "argv": list(plan.argv), "cwd": str(plan.cwd)}
+                    for name, plans in plan_builds(config, args.only) for plan in plans
+                ], indent=2))
+                return 0
+            print(json.dumps({"built": build(config, args.only)}, indent=2))
+            return 0
         if args.command == "fetch":
             out, fetched = fetch(args.config, args.sources, args.checkouts_dir)
             print(json.dumps({"config": str(out), "fetched": fetched}, indent=2))
@@ -595,27 +608,26 @@ def main(argv: list[str] | None = None) -> int:
                     batch.add(CaseResult(entry.scenario.name, "failed", str(exc)))
             expectations_path = args.config.parent / "expectations.yaml"
             labels = None
+            expectations = None
+            previous = None
             if expectations_path.is_file():
-                labels = label_results(
-                    batch.results,
-                    load_expectations(expectations_path),
-                    previous_results(config.artifact_root, args.project, batch.path),
-                )
+                expectations = load_expectations(expectations_path)
+                previous = previous_results(config.artifact_root, args.project, batch.path)
+                labels = label_results(batch.results, expectations, previous)
             manifest, report = batch.finalize(labels, checkout_states)
-            passed = sum(item.status == "passed" for item in batch.results)
-            required = sum(item.status in {"passed", "failed"} for item in batch.results)
+            payload = json.loads(manifest.read_text())
             summary = {
-                "regression_health": None if not required else round(100 * passed / required),
-                "passed": passed,
-                "required": required,
+                "counts": payload["counts"],
+                "passed": payload["counts"]["passed"],
+                "required": payload["required"],
                 "report": str(report),
                 "manifest": str(manifest),
             }
             if labels is not None:
-                summary["labels"] = json.loads(manifest.read_text())["label_counts"]
-                summary["variances"] = {
-                    name: label for name, label in labels.items() if label != STEADY
-                }
+                summary["labels"] = payload["label_counts"]
+                summary["variances"] = variance_records(
+                    batch.results, labels, expectations, previous
+                )
             if args.release:
                 summary = attach_musig2_legs(summary, invoke_musig2_release(config=args.config))
                 legs_ok = release_legs_ok(summary["musig2_legs"])
@@ -624,12 +636,12 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps(summary, indent=2))
             if not legs_ok:
                 return 1
-            if not required:
+            if not summary["required"]:
                 print("every selected scenario was blocked; nothing was actually verified", file=sys.stderr)
                 return 1
             if labels is not None:
                 return 1 if has_failures(labels) else 0
-            return 0 if passed == required else 1
+            return 0 if summary["passed"] == summary["required"] else 1
         scenario = load_scenario(args.scenario)
         get_suite(scenario.suite).validate(scenario)
         signer_order = _resolve_signer_order(scenario, args)
