@@ -37,8 +37,10 @@ def _fake_checkout(tmp_path: Path) -> Path:
     return checkout
 
 
-def _fake_crate(tmp_path: Path) -> Path:
+def _fake_crate(tmp_path: Path, monkeypatch) -> Path:
     """A fake in-repo spdk-cli crate dir, standing in for the real one."""
+    # The fake binary sits in the crate's own target/, as it does without CARGO_TARGET_DIR.
+    monkeypatch.delenv("CARGO_TARGET_DIR", raising=False)
     crate = tmp_path / "spdk-cli"
     target = crate / "target/release"
     target.mkdir(parents=True)
@@ -68,8 +70,8 @@ def test_catalog_selects_validator_scenarios_for_spdk_project(tmp_path: Path):
     assert [entry.scenario.name for entry in entries] == ["checked"]
 
 
-def test_spdk_plan_passes_binary_and_snapshots(tmp_path: Path):
-    adapter = SpdkAdapter(_fake_checkout(tmp_path), crate_dir=_fake_crate(tmp_path))
+def test_spdk_plan_passes_binary_and_snapshots(tmp_path: Path, monkeypatch):
+    adapter = SpdkAdapter(_fake_checkout(tmp_path), crate_dir=_fake_crate(tmp_path, monkeypatch))
 
     plan = adapter.plan_validate([tmp_path / "final.psbt"])
 
@@ -80,10 +82,10 @@ def test_spdk_only_validates_final_psbt():
     assert SpdkAdapter.snapshot_glob == "final.psbt"
 
 
-def test_spdk_rejection_raises_with_file_and_reason(tmp_path: Path):
+def test_spdk_rejection_raises_with_file_and_reason(tmp_path: Path, monkeypatch):
     adapter = SpdkAdapter(
         _fake_checkout(tmp_path),
-        crate_dir=_fake_crate(tmp_path),
+        crate_dir=_fake_crate(tmp_path, monkeypatch),
         runner=_runner([
             {"file": "/run/final.psbt", "ok": False, "error": "interpreter_check: bad signature"},
         ]),
@@ -93,8 +95,16 @@ def test_spdk_rejection_raises_with_file_and_reason(tmp_path: Path):
         adapter.validate([Path("/run/final.psbt")])
 
 
-def test_spdk_unbuilt_crate_is_reported(tmp_path: Path):
-    adapter = SpdkAdapter(_fake_checkout(tmp_path), crate_dir=_fake_crate(tmp_path))
+def test_spdk_binary_follows_cargo_target_dir(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("CARGO_TARGET_DIR", str(tmp_path / "shared-target"))
+
+    adapter = SpdkAdapter(_fake_checkout(tmp_path), crate_dir=tmp_path / "spdk-cli")
+
+    assert adapter.binary == tmp_path / "shared-target/release/spdk-cli"
+
+
+def test_spdk_unbuilt_crate_is_reported(tmp_path: Path, monkeypatch):
+    adapter = SpdkAdapter(_fake_checkout(tmp_path), crate_dir=_fake_crate(tmp_path, monkeypatch))
     adapter.binary.unlink()
 
     with pytest.raises(SpdkValidationError, match="not built"):

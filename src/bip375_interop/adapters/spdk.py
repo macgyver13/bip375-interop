@@ -19,6 +19,7 @@ the same commit, and run from this repo's own ``spdk-cli/``.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from pathlib import Path
 from typing import Sequence
@@ -52,7 +53,9 @@ class SpdkAdapter:
         self.checkout_dir = Path(checkout_dir).resolve()
         require_checkout(self.checkout_dir, ("psbt/Cargo.toml",))
         self.crate_dir = Path(crate_dir).resolve() if crate_dir is not None else _CRATE_DIR
-        self.binary = self.crate_dir / "target/release/spdk-cli"
+        # cargo build puts the binary under CARGO_TARGET_DIR when it is set.
+        target_dir = os.environ.get("CARGO_TARGET_DIR")
+        self.binary = (Path(target_dir) if target_dir else self.crate_dir / "target") / "release/spdk-cli"
         self._runner = runner
 
     def plan_build(self) -> tuple[CommandPlan, ...]:
