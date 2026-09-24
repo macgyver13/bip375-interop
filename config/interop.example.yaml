@@ -4,9 +4,6 @@ checkouts:
   silent-pay:
     path: ~/src/silent-pay
     revision: null
-  bip375-test-generator:
-    path: ~/src/bip375-test-generator
-    revision: null
   coldcard:
     path: ~/src/coldcard-firmware
     revision: null
@@ -15,9 +12,6 @@ checkouts:
     revision: null
   seedsigner:
     path: ~/src/seedsigner
-    revision: null
-  bitsaga-seedsigner:
-    path: ~/src/bitsaga-seedsigner
     revision: null
   caravan:
     path: ~/src/caravan

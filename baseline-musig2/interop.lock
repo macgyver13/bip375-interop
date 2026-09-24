@@ -1,7 +1,5 @@
 # Commit id of every checkout the expectations apply to. Written by `pin`.
 checkouts:
-  bip375-test-generator: 29b6d74b46913210545cb0e8931e5b8fcd5e57ce
-  bitsaga-seedsigner: a41ff4467a3943ff2f319c4072e95d104922e702
   caravan: b3b39754619a9cc06d9c92801927e5639bbd60e7
   coldcard: 80a27ae5326fc703de4c9372285dadef9152047b
   embit: f18d23bd5e089693198dcaaa15429040aad6e600

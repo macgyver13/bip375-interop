@@ -8,9 +8,9 @@ its current status as of the most recent artifact evidence in `artifacts/`. Comp
 
 - Python venv at `.venv` with this package installed (`pip install -e .`).
 - `interop.yaml` checkouts must exist locally and point at real source trees (see
-  `interop.yaml` at repo root for current paths: `silent-pay`, `bip375-test-generator`,
-  `coldcard` (coldcard-firmware), `jade` (Jade), `seedsigner`, `bitsaga-seedsigner`,
-  `caravan`, `spdk`).
+  `interop.yaml` at repo root for current paths: `silent-pay`, `coldcard`
+  (coldcard-firmware), `jade` (Jade), `seedsigner`, `caravan`, `spdk`, `embit`). Add a
+  `bitsaga-seedsigner` checkout only to run its two MuSig2 scenarios with a PSBT.
 - Validators (`caravan`, `spdk`) never sign and never join a round; see "Validators
   (caravan, spdk)" below for what each needs built before a scenario that opts into it
   (or `check --exhaustive`) can pass.
