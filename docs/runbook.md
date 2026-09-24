@@ -775,6 +775,10 @@ bip375-interop pin    # write interop.lock from the current tip of every checkou
   comma-separated set of applied-stack tips. Recreate that workspace by merging every
   listed tip; an empty applied stack resolves to the base parent. Dirty status,
   including modified submodules reported by `git status`, still prevents `pin`.
+- Known build byproducts are not dirty: libngu's bech32 patch in coldcard and the
+  ESP-IDF rewrite of `dependencies.lock.esp32` in jade (`KNOWN_BYPRODUCTS` in
+  `checkouts.py`). A moved libngu commit still is. Checkout states list the byproducts
+  they excused.
 - `artifacts/` is not committed. Each run manifest and batch report records the state of
   the checkouts it used, so a run can be recreated from `interop.lock` plus its manifest.
 
