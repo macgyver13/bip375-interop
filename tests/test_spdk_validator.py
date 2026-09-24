@@ -159,3 +159,11 @@ def test_real_spdk_accepts_signed_fixture_and_rejects_tampered_signature(tmp_pat
     assert adapter.validate([good])[0]["ok"]
     with pytest.raises(SpdkValidationError, match="bad.psbt"):
         adapter.validate([good, bad])
+
+
+def test_preflight_looks_for_spdk_cli_where_the_adapter_does(tmp_path: Path, monkeypatch):
+    from bip375_interop.preflight import default_spdk_binary
+
+    monkeypatch.setenv("CARGO_TARGET_DIR", str(tmp_path / "shared-target"))
+
+    assert default_spdk_binary() == tmp_path / "shared-target/release/spdk-cli"

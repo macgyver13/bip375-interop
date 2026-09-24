@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Iterable
 
+from .adapters.spdk import spdk_cli_binary
 from .checkouts import CheckoutState, inspect_checkout
 from .errors import CheckoutError, InteropError
 from .models import Checkout, HarnessConfig, Scenario
@@ -49,7 +50,7 @@ def _embit_problem(checkout: Checkout | None) -> str | None:
 def default_spdk_binary() -> Path:
     """``spdk-cli`` release binary built in this repo, not in the spdk checkout."""
 
-    return Path(__file__).resolve().parents[2] / "spdk-cli" / "target" / "release" / "spdk-cli"
+    return spdk_cli_binary()
 
 
 def validator_build_problems(

@@ -30,6 +30,13 @@ from bip375_interop.errors import InteropError
 _CRATE_DIR = Path(__file__).resolve().parents[3] / "spdk-cli"
 
 
+def spdk_cli_binary(crate_dir: Path = _CRATE_DIR) -> Path:
+    """Where ``cargo build --release`` in ``crate_dir`` puts spdk-cli."""
+
+    target_dir = os.environ.get("CARGO_TARGET_DIR")
+    return (Path(target_dir) if target_dir else crate_dir / "target") / "release/spdk-cli"
+
+
 class SpdkValidationError(InteropError):
     """spdk-cli rejected at least one PSBT snapshot."""
 
@@ -53,9 +60,7 @@ class SpdkAdapter:
         self.checkout_dir = Path(checkout_dir).resolve()
         require_checkout(self.checkout_dir, ("psbt/Cargo.toml",))
         self.crate_dir = Path(crate_dir).resolve() if crate_dir is not None else _CRATE_DIR
-        # cargo build puts the binary under CARGO_TARGET_DIR when it is set.
-        target_dir = os.environ.get("CARGO_TARGET_DIR")
-        self.binary = (Path(target_dir) if target_dir else self.crate_dir / "target") / "release/spdk-cli"
+        self.binary = spdk_cli_binary(self.crate_dir)
         self._runner = runner
 
     def plan_build(self) -> tuple[CommandPlan, ...]:
