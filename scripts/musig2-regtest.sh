@@ -6,6 +6,8 @@
 # env:   BITCOIND, BITCOIN_CLI   binaries (default: on PATH)
 #        CONFIG                  harness config (default: $ROOT/interop.yaml)
 #        SILENT_PAY              silent-pay checkout (default: from CONFIG)
+#        SP_DEMO_BIN             directory of prebuilt sp-demo binaries; skips cargo
+#                                and SILENT_PAY
 #        RPC_PORT                regtest RPC port (default 18999)
 #        ALLOW_DIRTY=1           pass --allow-dirty to the harness
 #        WORK_DIR                keep scratch files here (default: a new temp dir)
@@ -33,18 +35,24 @@ for bin in "$BITCOIND" "$BITCOIN_CLI"; do
   command -v "$bin" >/dev/null || { echo "$bin not found; set BITCOIND / BITCOIN_CLI" >&2; exit 2; }
 done
 
-SILENT_PAY=${SILENT_PAY:-$(python3 - "$CONFIG" <<'PY'
+if [ -z "${SP_DEMO_BIN:-}" ]; then
+  SILENT_PAY=${SILENT_PAY:-$(python3 - "$CONFIG" <<'PY'
 import os, sys, yaml
 print(os.path.expanduser(yaml.safe_load(open(sys.argv[1]))["checkouts"]["silent-pay"]["path"]))
 PY
 )}
+fi
 
 harness() {
   PYTHONPATH="$ROOT/src" python3 -m bip375_interop.cli --config "$CONFIG" ${ALLOW_DIRTY:+--allow-dirty} "$@"
 }
 sp_demo() {
   local bin=$1; shift
-  (cd "$SILENT_PAY" && cargo run -q -p sp-demo --bin "$bin" -- "$@")
+  if [ -n "${SP_DEMO_BIN:-}" ]; then
+    "$SP_DEMO_BIN/$bin" "$@"
+  else
+    (cd "$SILENT_PAY" && cargo run -q -p sp-demo --bin "$bin" -- "$@")
+  fi
 }
 
 cleanup() {
@@ -99,6 +107,28 @@ echo "== broadcast and confirm"
 sp_demo broadcast_final --wallet "$WORK/wallet.toml" --tx-hex-file "$OUT/musig2-sp-final-hex.txt" "${RPC[@]}"
 
 echo "== on-chain scan"
-sp_demo verify_onchain "$OUT/musig2-sp-final.psbt" --recipients "$WORK/recipients-scan.toml" --txid "$TXID" "${RPC[@]}"
+sp_demo verify_onchain "$OUT/musig2-sp-final.psbt" --recipients "$WORK/recipients-scan.toml" --txid "$TXID" "${RPC[@]}" \
+  | tee "$WORK/verify.out"
+
+# What should repeat across runs, since output order (and so the txid) need not: the
+# spent outpoints, the outputs as a set, and the SP output the scan found. The wtxid is
+# kept to show whether the signatures repeat too.
+"$BITCOIN_CLI" -regtest -datadir="$DATADIR" -rpcport="$RPC_PORT" \
+  decoderawtransaction "$(cat "$OUT/musig2-sp-final-hex.txt")" > "$WORK/final-tx.json"
+python3 - "$WORK/final-tx.json" "$WORK/verify.out" "$ARCH" > "$OUT/fingerprint.json" <<'PY'
+import json, re, sys
+tx = json.load(open(sys.argv[1]))
+found = re.search(r"-> output\[(\d+)\]", open(sys.argv[2]).read())
+outputs = [(o["scriptPubKey"]["hex"], round(o["value"] * 100_000_000)) for o in tx["vout"]]
+print(json.dumps({
+    "leg": sys.argv[3],
+    "inputs": sorted(f"{i['txid']}:{i['vout']}" for i in tx["vin"]),
+    "outputs": sorted([spk, sat] for spk, sat in outputs),
+    "sp_output": outputs[int(found.group(1))][0],
+    "txid": tx["txid"],
+    "wtxid": tx["hash"],
+}, sort_keys=True))
+PY
+echo "FINGERPRINT $(cat "$OUT/fingerprint.json")"
 
 echo "PASS $SCENARIO $ARCH txid=$TXID artifacts=$OUT"
