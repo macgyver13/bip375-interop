@@ -289,8 +289,9 @@ unlike Caravan it only validates `final.psbt` (`SpdkAdapter.snapshot_glob =
 bip375-interop run-generated scenarios/bip375-spdk-coldcard-jade-two-way.yaml
 ```
 
-Needs `spdk-cli/` built first: `cd spdk-cli && cargo build --release`. Its `Cargo.toml`
-depends on spdk's `psbt` crate by git URL pinned to a `rev` (the same commit silent-pay
+Needs `spdk-cli/` built first: `cd spdk-cli && cargo build --release`. The harness runs
+`$CARGO_TARGET_DIR/release/spdk-cli` when that is set, else `spdk-cli/target/release/`.
+Its `Cargo.toml` depends on spdk's `psbt` crate by git URL pinned to a `rev` (the same commit silent-pay
 depends on), and the committed `Cargo.lock` fixes everything else, so the build needs no
 local checkout. To test an uncommitted spdk change, override the dependency for one build:
 `cargo build --release --config 'patch."https://github.com/macgyver13/spdk.git".psbt.path="<spdk checkout>/psbt"'`.
