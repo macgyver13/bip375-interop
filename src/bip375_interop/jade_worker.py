@@ -246,8 +246,10 @@ def _qemu_executable(environ: Mapping[str, str]) -> str:
     discovered = shutil.which("qemu-system-xtensa")
     if discovered:
         return discovered
+    # ESP-IDF installs its tools under IDF_TOOLS_PATH (default ~/.espressif) on every host.
+    tools = Path(environ.get("IDF_TOOLS_PATH") or Path.home() / ".espressif")
     candidates = sorted(
-        Path.home().glob(".espressif/tools/qemu-xtensa/*/qemu/bin/qemu-system-xtensa"),
+        tools.glob("tools/qemu-xtensa/*/qemu/bin/qemu-system-xtensa"),
         reverse=True,
     )
     if candidates:
