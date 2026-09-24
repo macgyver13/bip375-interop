@@ -52,3 +52,10 @@ def test_checkout_vcs_defaults_to_auto_and_rejects_unknown(tmp_path: Path):
     bad = _config(tmp_path, "checkouts:\n  embit: {path: /src/embit, vcs: hg}\n")
     with pytest.raises(ConfigurationError, match="vcs"):
         load_config(bad)
+
+
+def test_config_suites_default_to_all_and_reject_unknown(tmp_path: Path):
+    assert load_config(_config(tmp_path, "checkouts: {}\n")).suites is None
+    assert load_config(_config(tmp_path, "suites: [bip375]\ncheckouts: {}\n")).suites == ("bip375",)
+    with pytest.raises(ConfigurationError, match="suites"):
+        load_config(_config(tmp_path, "suites: [bip999]\ncheckouts: {}\n"))
