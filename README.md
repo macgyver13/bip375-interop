@@ -47,7 +47,8 @@ Three configs exist:
 - `interop.yaml` (repo root): your live checkouts. Use it while developing a change.
 - `baseline/interop.yaml`: the primary profile, the BIP-375 line of every repo. It has its
   own `interop.lock` and `expectations.yaml`, and is what "no regression" is measured
-  against. Pass `--config baseline/interop.yaml` to run against it.
+  against. Its `suites: [bip375]` line limits `check` to BIP-375 scenarios. Pass
+  `--config baseline/interop.yaml` to run against it.
 - `baseline-musig2/interop.yaml`: the same, except repos with a MuSig2 line (jade,
   coldcard) use it. MuSig2 work must not regress BIP-375, so this profile shares the
   primary `expectations.yaml` (a symlink) and runs the same `check`, plus the MuSig2-SP

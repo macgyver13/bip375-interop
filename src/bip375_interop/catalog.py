@@ -33,7 +33,11 @@ def discover(root: Path) -> tuple[ScenarioEntry, ...]:
     return tuple(entries)
 
 
-def select(entries: tuple[ScenarioEntry, ...], project: str) -> tuple[ScenarioEntry, ...]:
+def select(
+    entries: tuple[ScenarioEntry, ...], project: str, suites: tuple[str, ...] | None = None
+) -> tuple[ScenarioEntry, ...]:
+    if suites is not None:
+        entries = tuple(entry for entry in entries if entry.scenario.suite in suites)
     # Feature mapping is intentionally conservative until explicit path rules
     # are versioned in the catalog: a project change exercises every scenario
     # that names that backend.

@@ -25,6 +25,8 @@ class HarnessConfig:
     artifact_root: Path
     checkouts: Mapping[str, Checkout]
     allow_dirty: bool = False
+    # Suites a profile's `check` runs; None means every suite.
+    suites: tuple[str, ...] | None = None
 
 
 @dataclass(frozen=True)

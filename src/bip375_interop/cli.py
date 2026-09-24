@@ -516,7 +516,7 @@ def main(argv: list[str] | None = None) -> int:
             }, indent=2))
             return 0
         if args.command == "check":
-            entries = select(discover(args.scenarios_dir), args.project)
+            entries = select(discover(args.scenarios_dir), args.project, config.suites)
             if args.exhaustive or args.release:
                 entries = attach_bip375_validators(entries)
             bindings = _psbt_bindings(args.psbt)

@@ -7,6 +7,7 @@ import yaml
 
 from .errors import ConfigurationError
 from .models import Checkout, HarnessConfig, Scenario
+from .suites import SuiteName
 
 LOCK_NAME = "interop.lock"
 VCS_KINDS = ("git", "jj", "gitbutler")
@@ -61,7 +62,13 @@ def load_config(path: Path) -> HarnessConfig:
         if vcs is not None and vcs not in VCS_KINDS:
             raise ConfigurationError(f"checkout {name}: vcs must be one of {VCS_KINDS}, got {vcs!r}")
         checkouts[name] = Checkout(name, checkout_path, revision or pinned, vcs)
-    return HarnessConfig(artifact_root, checkouts, bool(value.get("allow_dirty", False)))
+    suites = value.get("suites")
+    if suites is not None:
+        known = {suite.value for suite in SuiteName}
+        if not isinstance(suites, list) or not suites or not set(suites) <= known:
+            raise ConfigurationError(f"suites must be a non-empty list drawn from {sorted(known)}")
+        suites = tuple(suites)
+    return HarnessConfig(artifact_root, checkouts, bool(value.get("allow_dirty", False)), suites)
 
 
 def load_scenario(path: Path) -> Scenario:
