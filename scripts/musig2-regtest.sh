@@ -107,6 +107,28 @@ echo "== broadcast and confirm"
 sp_demo broadcast_final --wallet "$WORK/wallet.toml" --tx-hex-file "$OUT/musig2-sp-final-hex.txt" "${RPC[@]}"
 
 echo "== on-chain scan"
-sp_demo verify_onchain "$OUT/musig2-sp-final.psbt" --recipients "$WORK/recipients-scan.toml" --txid "$TXID" "${RPC[@]}"
+sp_demo verify_onchain "$OUT/musig2-sp-final.psbt" --recipients "$WORK/recipients-scan.toml" --txid "$TXID" "${RPC[@]}" \
+  | tee "$WORK/verify.out"
+
+# What should repeat across runs, since output order (and so the txid) need not: the
+# spent outpoints, the outputs as a set, and the SP output the scan found. The wtxid is
+# kept to show whether the signatures repeat too.
+"$BITCOIN_CLI" -regtest -datadir="$DATADIR" -rpcport="$RPC_PORT" \
+  decoderawtransaction "$(cat "$OUT/musig2-sp-final-hex.txt")" > "$WORK/final-tx.json"
+python3 - "$WORK/final-tx.json" "$WORK/verify.out" "$ARCH" > "$OUT/fingerprint.json" <<'PY'
+import json, re, sys
+tx = json.load(open(sys.argv[1]))
+found = re.search(r"-> output\[(\d+)\]", open(sys.argv[2]).read())
+outputs = [(o["scriptPubKey"]["hex"], round(o["value"] * 100_000_000)) for o in tx["vout"]]
+print(json.dumps({
+    "leg": sys.argv[3],
+    "inputs": sorted(f"{i['txid']}:{i['vout']}" for i in tx["vin"]),
+    "outputs": sorted([spk, sat] for spk, sat in outputs),
+    "sp_output": outputs[int(found.group(1))][0],
+    "txid": tx["txid"],
+    "wtxid": tx["hash"],
+}, sort_keys=True))
+PY
+echo "FINGERPRINT $(cat "$OUT/fingerprint.json")"
 
 echo "PASS $SCENARIO $ARCH txid=$TXID artifacts=$OUT"
