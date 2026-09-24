@@ -16,6 +16,29 @@ class CheckoutState:
     dirty: bool
     diff_sha256: str | None
     vcs: str = "git"
+    # Known build byproducts found modified and left out of the dirty check.
+    byproducts: tuple[str, ...] = ()
+
+
+# Paths a build writes inside its own checkout, so every built tree carries them.
+# A submodule is excused only for changes inside it: a moved commit is still dirty.
+KNOWN_BYPRODUCTS = {
+    # libngu's Makefile applies bech32.patch to its vendored bech32 submodule.
+    "coldcard": ("external/libngu",),
+    # The ESP-IDF build rewrites the lock to the local IDF version.
+    "jade": ("dependencies.lock.esp32",),
+    # The pinned lock is out of sync with package.json, so npm install rewrites it.
+    "caravan": ("package-lock.json",),
+}
+
+
+def _byproduct(checkout: Checkout, line: str) -> str | None:
+    # porcelain v2 ordinary change: "1 XY sub mH mI mW hH hI path"; sub[1] is "C"
+    # when a submodule's commit moved.
+    fields = line.split(" ", 8)
+    if fields[0] == "1" and fields[2][1] != "C" and fields[8] in KNOWN_BYPRODUCTS.get(checkout.name, ()):
+        return fields[8]
+    return None
 
 
 def _git(checkout: Checkout, *args: str) -> bytes:
@@ -69,6 +92,9 @@ def _require_pinned(checkout: Checkout, revision: str) -> None:
 def inspect_checkout(checkout: Checkout, allow_dirty: bool = False) -> CheckoutState:
     if not checkout.path.is_dir():
         raise CheckoutError(f"{checkout.name}: missing checkout {checkout.path}")
+    if not (checkout.path / ".git").exists() and not (checkout.path / ".jj").is_dir():
+        # Without this, git would report the commit of any repository above the path.
+        raise CheckoutError(f"{checkout.name}: {checkout.path} has no .git or .jj")
     vcs = _vcs(checkout)
     if vcs == "jj":
         revision = _jj_revision(checkout)
@@ -94,12 +120,14 @@ def inspect_checkout(checkout: Checkout, allow_dirty: bool = False) -> CheckoutS
                 )
             revision = parents[0] if len(parents) == 1 else ",".join(sorted(parents))
     _require_pinned(checkout, revision)
-    status = _git(checkout, "status", "--porcelain=v1")
-    dirty = bool(status)
+    status = _git(checkout, "status", "--porcelain=v2")
+    lines = status.decode().splitlines()
+    byproducts = tuple(p for p in (_byproduct(checkout, line) for line in lines) if p)
+    dirty = len(lines) > len(byproducts)
     if dirty and not allow_dirty:
         raise CheckoutError(f"{checkout.name}: checkout is dirty (use --allow-dirty for development)")
     diff_hash = None
     if dirty:
         tracked = b"" if revision == "UNBORN" else _git(checkout, "diff", "--binary", "HEAD")
         diff_hash = hashlib.sha256(tracked + b"\0" + status).hexdigest()
-    return CheckoutState(checkout.name, str(checkout.path), revision, dirty, diff_hash, vcs)
+    return CheckoutState(checkout.name, str(checkout.path), revision, dirty, diff_hash, vcs, byproducts)
