@@ -27,6 +27,8 @@ KNOWN_BYPRODUCTS = {
     "coldcard": ("external/libngu",),
     # The ESP-IDF build rewrites the lock to the local IDF version.
     "jade": ("dependencies.lock.esp32",),
+    # The pinned lock is out of sync with package.json, so npm install rewrites it.
+    "caravan": ("package-lock.json",),
 }
 
 

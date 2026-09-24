@@ -279,3 +279,14 @@ def test_a_path_without_git_or_jj_is_refused_not_resolved_upward(tmp_path: Path)
 
     with pytest.raises(CheckoutError, match="no .git or .jj"):
         inspect_checkout(Checkout("embit", tmp_path / "copy"), allow_dirty=True)
+
+
+def test_caravan_lock_rewrite_is_a_known_byproduct(tmp_path: Path):
+    _configure_git(tmp_path)
+    (tmp_path / "package-lock.json").write_text("{}")
+    _commit_all(tmp_path, "base")
+    (tmp_path / "package-lock.json").write_text('{"rewritten": true}')
+
+    state = inspect_checkout(Checkout("caravan", tmp_path))
+    assert not state.dirty
+    assert state.byproducts == ("package-lock.json",)
