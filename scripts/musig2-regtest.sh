@@ -6,6 +6,8 @@
 # env:   BITCOIND, BITCOIN_CLI   binaries (default: on PATH)
 #        CONFIG                  harness config (default: $ROOT/interop.yaml)
 #        SILENT_PAY              silent-pay checkout (default: from CONFIG)
+#        SP_DEMO_BIN             directory of prebuilt sp-demo binaries; skips cargo
+#                                and SILENT_PAY
 #        RPC_PORT                regtest RPC port (default 18999)
 #        ALLOW_DIRTY=1           pass --allow-dirty to the harness
 #        WORK_DIR                keep scratch files here (default: a new temp dir)
@@ -33,18 +35,24 @@ for bin in "$BITCOIND" "$BITCOIN_CLI"; do
   command -v "$bin" >/dev/null || { echo "$bin not found; set BITCOIND / BITCOIN_CLI" >&2; exit 2; }
 done
 
-SILENT_PAY=${SILENT_PAY:-$(python3 - "$CONFIG" <<'PY'
+if [ -z "${SP_DEMO_BIN:-}" ]; then
+  SILENT_PAY=${SILENT_PAY:-$(python3 - "$CONFIG" <<'PY'
 import os, sys, yaml
 print(os.path.expanduser(yaml.safe_load(open(sys.argv[1]))["checkouts"]["silent-pay"]["path"]))
 PY
 )}
+fi
 
 harness() {
   PYTHONPATH="$ROOT/src" python3 -m bip375_interop.cli --config "$CONFIG" ${ALLOW_DIRTY:+--allow-dirty} "$@"
 }
 sp_demo() {
   local bin=$1; shift
-  (cd "$SILENT_PAY" && cargo run -q -p sp-demo --bin "$bin" -- "$@")
+  if [ -n "${SP_DEMO_BIN:-}" ]; then
+    "$SP_DEMO_BIN/$bin" "$@"
+  else
+    (cd "$SILENT_PAY" && cargo run -q -p sp-demo --bin "$bin" -- "$@")
+  fi
 }
 
 cleanup() {
