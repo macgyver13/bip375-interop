@@ -9,6 +9,7 @@ from dataclasses import asdict, replace
 from pathlib import Path
 
 from . import __version__
+from .build import build, plan_builds
 from .fetch import fetch
 from .checkouts import inspect_checkout
 from .expectations import load_expectations
@@ -96,6 +97,9 @@ def _parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("doctor")
     sub.add_parser("pin", help="write interop.lock with the current commit id of every checkout")
+    build_cmd = sub.add_parser("build", help="run each checkout's build steps (plan_build)")
+    build_cmd.add_argument("only", nargs="*", help="checkout names (default: every one in the profile)")
+    build_cmd.add_argument("--dry-run", action="store_true", help="list the steps without running them")
     fetch_cmd = sub.add_parser("fetch", help="clone every checkout at its lock commit and write interop.fetched.yaml")
     fetch_cmd.add_argument("--sources", type=Path, default=Path("sources.yaml"))
     fetch_cmd.add_argument("--checkouts-dir", type=Path, default=Path(".checkouts"))
@@ -507,6 +511,15 @@ def main(argv: list[str] | None = None) -> int:
             }
             write_lock(args.config.parent / LOCK_NAME, pins)
             print(json.dumps(pins, indent=2))
+            return 0
+        if args.command == "build":
+            if args.dry_run:
+                print(json.dumps([
+                    {"checkout": name, "step": plan.name, "argv": list(plan.argv), "cwd": str(plan.cwd)}
+                    for name, plans in plan_builds(config, args.only) for plan in plans
+                ], indent=2))
+                return 0
+            print(json.dumps({"built": build(config, args.only)}, indent=2))
             return 0
         if args.command == "fetch":
             out, fetched = fetch(args.config, args.sources, args.checkouts_dir)

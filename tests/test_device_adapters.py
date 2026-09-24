@@ -187,3 +187,25 @@ def test_runner_is_injected_and_receives_checkout_and_environment(tmp_path: Path
 def test_invalid_checkout_fails_before_any_subprocess_runs(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="invalid checkout"):
         JadeAdapter(tmp_path)
+
+
+def test_jade_plans_its_build_before_the_flash_image_exists(tmp_path: Path) -> None:
+    root = tmp_path / "jade"
+    _touch(root, "test_jade.py")
+    (root / "jadepy").mkdir()
+    with pytest.raises(ValueError, match="flash_image.bin"):
+        JadeAdapter(root)
+
+    plans = JadeAdapter(root, require_build=False).plan_build()
+
+    assert [plan.name for plan in plans] == ["jade-switch-to-qemu", "jade-build", "jade-flash-image"]
+    # switch_to.sh calls idf.py too, so every step runs in the ESP-IDF environment.
+    assert plans[0].argv[2].endswith("./tools/switch_to.sh qemu --dev --ci")
+    assert all('"$IDF_PATH/export.sh"' in plan.argv[2] for plan in plans)
+    assert plans[2].argv[2].endswith("make_flash_img.sh build/flash_image.bin build/qemu_efuse.bin")
+
+
+def test_seedsigner_install_keeps_the_harness_embit(tmp_path: Path) -> None:
+    adapter = SeedSignerAdapter(_seedsigner_checkout(tmp_path / "ss", musig2=False))
+
+    assert "--no-deps" in adapter.plan_build()[0].argv

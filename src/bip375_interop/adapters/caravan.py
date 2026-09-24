@@ -35,7 +35,9 @@ class CaravanAdapter:
 
     def plan_build(self) -> tuple[CommandPlan, ...]:
         return (
-            CommandPlan("caravan-install", ("npm", "ci"), self.checkout_dir),
+            # npm install, not npm ci: the pinned package-lock.json is out of sync with
+            # package.json (the rewritten lock is a known byproduct).
+            CommandPlan("caravan-install", ("npm", "install", "--no-audit", "--no-fund"), self.checkout_dir),
             CommandPlan(
                 "caravan-psbt-build",
                 ("npx", "turbo", "build", "--filter=@caravan/psbt..."),

@@ -80,6 +80,9 @@ def execute_plan(
     """Execute a plan with explicit environment overlays and captured output."""
 
     env = os.environ.copy()
+    # A child started with cwd= keeps the parent's PWD; tools that read it (make's $(PWD))
+    # need it to name the plan's directory.
+    env["PWD"] = str(plan.cwd)
     env.update(plan.env)
     env.update(extra_env or {})
     completed = runner(
