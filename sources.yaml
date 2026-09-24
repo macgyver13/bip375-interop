@@ -1,6 +1,6 @@
 # Where `fetch` clones each checkout from; each profile's interop.lock says which commit.
 # `urls` overrides a submodule's .gitmodules URL; `submodules` lists what to initialize
-# (nested paths allowed) or is `all`. Mirrors images/linux/.
+# (nested paths allowed) or is `all`. images/Dockerfile fetches from here.
 silent-pay: https://github.com/macgyver13/silent-pay.git
 coldcard:
   url: https://github.com/macgyver13/coldcard-firmware.git
