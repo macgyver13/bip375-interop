@@ -106,6 +106,28 @@ def test_jade_worker_registers_descriptor_once_for_musig2_sp() -> None:
     ]
 
 
+def test_jade_worker_signs_signet_as_testnet() -> None:
+    jade = FakeJade()
+    worker = JadeWorker(
+        environ={"BIP375_JADE_ENDPOINT": "tcp:127.0.0.1:30121"},
+        api_factory=lambda **_kwargs: jade,
+    )
+    request = {
+        "suite": "musig2-sp",
+        "mnemonic": "published test mnemonic",
+        "network": "signet",
+        "descriptor": "tr(musig(...))",
+        "psbt": base64.b64encode(b"psbt\xfffixture").decode(),
+    }
+
+    worker.process(request)
+
+    assert jade.registered_descriptors == [
+        ("testnet", "bip375-interop", "tr(musig(...))", {}),
+    ]
+    assert jade.calls == [("testnet", b"psbt\xfffixture")]
+
+
 def test_jade_worker_rejects_a_second_signer_seed() -> None:
     worker = JadeWorker(
         environ={"BIP375_JADE_ENDPOINT": "tcp:127.0.0.1:30121"},
