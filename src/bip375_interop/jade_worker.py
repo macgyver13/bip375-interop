@@ -25,7 +25,8 @@ from typing import Any, TextIO
 from .signer_worker import RuntimeCapabilities, WorkerRequestError, _required_string
 
 
-_NETWORKS = {"regtest": "localtest"}
+# Jade has no signet network; signet uses its testnet parameters
+_NETWORKS = {"regtest": "localtest", "signet": "testnet"}
 
 
 class JadeWorker:

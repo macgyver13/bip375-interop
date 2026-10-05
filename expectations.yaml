@@ -120,6 +120,10 @@ scenarios:
     status: supported
     reason: passes end to end on 2026-09-18 given a silent-pay initial PSBT (derive-then-aggregate)
     reference: docs/runbook.md
+  musig2-sp-jade-derive-first-signet:
+    status: needs-external-psbt
+    reason: needs a funded signet treasury; same flow as musig2-sp-jade-derive-first-two-way
+    reference: docs/runbook.md
   musig2-sp-signet-treasury:
     status: needs-external-psbt
     reason: needs a funded signet treasury, blocked by a BitSaga bug
