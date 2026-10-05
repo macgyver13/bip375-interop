@@ -1,0 +1,9 @@
+name: musig2-sp-jade-derive-first-signet
+suite: musig2-sp
+network: signet
+signers:
+  - {name: jade-a, backend: jade, seed_id: test-a}
+  - {name: jade-b, backend: jade, seed_id: test-b}
+suite_config:
+  key_architecture: derive-then-aggregate
+  threshold: 2
