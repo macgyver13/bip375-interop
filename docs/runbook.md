@@ -327,7 +327,8 @@ scenario, alongside Caravan on every snapshot and SPDK on the final PSBT. Its ru
 manifest records all four stage results and the individual Lab findings. The batch
 directory contains `report.json`, `interop-lab.junit.xml`, and `interop-lab.sarif`.
 Docker images for the pinned native adapters must already be built; the stage does
-not pull or replace them during a release check.
+not pull or replace them during a release check. The pinned commands and fixture
+matrix are in [`interop-lab/README.md`](../interop-lab/README.md).
 
 `expectations.yaml` names the exact `baseline/interop.lock` SHA-256 and the allowed
 Interop Lab findings. The release gate checks that digest before running and never

@@ -1,0 +1,258 @@
+{
+  "suite": "psbt-interop-lab@0.11.0",
+  "matrix_run_id": "20261007182928-d8ace91f",
+  "source_batch": "artifacts/20261006T155813.091645Z-bip375-coldcard-jade-two-way-ca808841",
+  "workflow_vectors": "/Users/macgyver/src/coldcard-firmware/testing/bip375_test_vectors.json",
+  "fixtures": [
+    {
+      "id": "snap-00-initial",
+      "sha256": "sha256:b4edd1dd43d143e204ec99c1aabf05050a25f46402b25eb2164d443649688265",
+      "output_script_present": false,
+      "lab_parse": true,
+      "rust_psbt_v2_parse": true,
+      "libwally_parse": false,
+      "rust_psbt_v2_roundtrip": "invalid-output",
+      "libwally_roundtrip": "rejected"
+    },
+    {
+      "id": "snap-01-contribute-coldcard-a-merged",
+      "sha256": "sha256:44ca9ee70e77b227db2dbabbe3effa1ae804de1bade8d0f6d14bae58769b6f5d",
+      "output_script_present": false,
+      "lab_parse": true,
+      "rust_psbt_v2_parse": true,
+      "libwally_parse": false,
+      "rust_psbt_v2_roundtrip": "invalid-output",
+      "libwally_roundtrip": "rejected"
+    },
+    {
+      "id": "snap-01-contribute-coldcard-a-returned",
+      "sha256": "sha256:44ca9ee70e77b227db2dbabbe3effa1ae804de1bade8d0f6d14bae58769b6f5d",
+      "output_script_present": false,
+      "lab_parse": true,
+      "rust_psbt_v2_parse": true,
+      "libwally_parse": false,
+      "rust_psbt_v2_roundtrip": "invalid-output",
+      "libwally_roundtrip": "rejected"
+    },
+    {
+      "id": "snap-02-resolve-sign-jade-b-merged",
+      "sha256": "sha256:f9e25a21423f4ceb5d773a6ede7ef8be04ca7d57a6912dc2183d0a1050ec0187",
+      "output_script_present": true,
+      "lab_parse": true,
+      "rust_psbt_v2_parse": true,
+      "libwally_parse": true,
+      "rust_psbt_v2_roundtrip": "preserved",
+      "libwally_roundtrip": "invalid-output"
+    },
+    {
+      "id": "snap-02-resolve-sign-jade-b-returned",
+      "sha256": "sha256:7dad593f2eec959b6809e511b2a2c5972f0c0eff8b0bc3c529859c80b69d389c",
+      "output_script_present": true,
+      "lab_parse": true,
+      "rust_psbt_v2_parse": true,
+      "libwally_parse": true,
+      "rust_psbt_v2_roundtrip": "preserved",
+      "libwally_roundtrip": "invalid-output"
+    },
+    {
+      "id": "snap-03-sign-coldcard-a-merged",
+      "sha256": "sha256:cef9fb78030dc18dd980bff12f173701ec9fcd0084c202f1ea656f0fff0acf31",
+      "output_script_present": true,
+      "lab_parse": true,
+      "rust_psbt_v2_parse": true,
+      "libwally_parse": true,
+      "rust_psbt_v2_roundtrip": "preserved",
+      "libwally_roundtrip": "invalid-output"
+    },
+    {
+      "id": "snap-03-sign-coldcard-a-returned",
+      "sha256": "sha256:2f6253f89bc9447ae40041134252a9519928a1942bf60f429885399e49b9d77e",
+      "output_script_present": true,
+      "lab_parse": true,
+      "rust_psbt_v2_parse": true,
+      "libwally_parse": true,
+      "rust_psbt_v2_roundtrip": "preserved",
+      "libwally_roundtrip": "invalid-output"
+    },
+    {
+      "id": "snap-final",
+      "sha256": "sha256:cef9fb78030dc18dd980bff12f173701ec9fcd0084c202f1ea656f0fff0acf31",
+      "output_script_present": true,
+      "lab_parse": true,
+      "rust_psbt_v2_parse": true,
+      "libwally_parse": true,
+      "rust_psbt_v2_roundtrip": "preserved",
+      "libwally_roundtrip": "invalid-output"
+    },
+    {
+      "id": "workflow-00",
+      "sha256": "sha256:facf502aaac1c18df8fa90437a3b35fdefaf631b651012d60ea04540b9601f00",
+      "output_script_present": false,
+      "lab_parse": true,
+      "rust_psbt_v2_parse": true,
+      "libwally_parse": false,
+      "rust_psbt_v2_roundtrip": "invalid-output",
+      "libwally_roundtrip": "rejected"
+    },
+    {
+      "id": "workflow-01",
+      "sha256": "sha256:893c73a51d5cf8e0da31518ebc3f7606f9b2f151424d3fb898dde288ba44d950",
+      "output_script_present": false,
+      "lab_parse": true,
+      "rust_psbt_v2_parse": true,
+      "libwally_parse": false,
+      "rust_psbt_v2_roundtrip": "invalid-output",
+      "libwally_roundtrip": "rejected"
+    },
+    {
+      "id": "workflow-02",
+      "sha256": "sha256:60bb4353d35fffd1b313cd7bb99e36ecbda03c82771816d595b69e816f26aa73",
+      "output_script_present": true,
+      "lab_parse": true,
+      "rust_psbt_v2_parse": true,
+      "libwally_parse": true,
+      "rust_psbt_v2_roundtrip": "preserved",
+      "libwally_roundtrip": "invalid-output"
+    },
+    {
+      "id": "workflow-03",
+      "sha256": "sha256:38087321f22c88504a6b2b128c659e6388b4bbedc962add0c58a4f6acb0ba43b",
+      "output_script_present": true,
+      "lab_parse": true,
+      "rust_psbt_v2_parse": true,
+      "libwally_parse": true,
+      "rust_psbt_v2_roundtrip": "preserved",
+      "libwally_roundtrip": "invalid-output"
+    },
+    {
+      "id": "workflow-04",
+      "sha256": "sha256:38087321f22c88504a6b2b128c659e6388b4bbedc962add0c58a4f6acb0ba43b",
+      "output_script_present": true,
+      "lab_parse": true,
+      "rust_psbt_v2_parse": true,
+      "libwally_parse": true,
+      "rust_psbt_v2_roundtrip": "preserved",
+      "libwally_roundtrip": "invalid-output"
+    },
+    {
+      "id": "workflow-05",
+      "sha256": "sha256:9aa047dd965327719214e05a5bb8172c32e424b95e7cd9a9f316696175113e79",
+      "output_script_present": false,
+      "lab_parse": true,
+      "rust_psbt_v2_parse": true,
+      "libwally_parse": false,
+      "rust_psbt_v2_roundtrip": "invalid-output",
+      "libwally_roundtrip": "rejected"
+    },
+    {
+      "id": "workflow-06",
+      "sha256": "sha256:8abfccd446e41792c4e074f3683e798880376528e7573cad7ee36ffd7668f604",
+      "output_script_present": false,
+      "lab_parse": true,
+      "rust_psbt_v2_parse": true,
+      "libwally_parse": false,
+      "rust_psbt_v2_roundtrip": "invalid-output",
+      "libwally_roundtrip": "rejected"
+    },
+    {
+      "id": "workflow-07",
+      "sha256": "sha256:8d76477586ac88daf894582cd7e53fa6273c63aa63167b4fad5eb2cd7feaa875",
+      "output_script_present": true,
+      "lab_parse": true,
+      "rust_psbt_v2_parse": true,
+      "libwally_parse": true,
+      "rust_psbt_v2_roundtrip": "preserved",
+      "libwally_roundtrip": "invalid-output"
+    },
+    {
+      "id": "workflow-08",
+      "sha256": "sha256:68b8b57867f43d62c4a95a8aeb1fb51fa4f189d3ffba1546cc243fff2b8488c2",
+      "output_script_present": true,
+      "lab_parse": true,
+      "rust_psbt_v2_parse": true,
+      "libwally_parse": true,
+      "rust_psbt_v2_roundtrip": "preserved",
+      "libwally_roundtrip": "invalid-output"
+    },
+    {
+      "id": "workflow-09",
+      "sha256": "sha256:68b8b57867f43d62c4a95a8aeb1fb51fa4f189d3ffba1546cc243fff2b8488c2",
+      "output_script_present": true,
+      "lab_parse": true,
+      "rust_psbt_v2_parse": true,
+      "libwally_parse": true,
+      "rust_psbt_v2_roundtrip": "preserved",
+      "libwally_roundtrip": "invalid-output"
+    },
+    {
+      "id": "workflow-10",
+      "sha256": "sha256:91e184d2bcf32a64f402d3e205b33c458016fd7d091f568a6f63c688594d5042",
+      "output_script_present": false,
+      "lab_parse": true,
+      "rust_psbt_v2_parse": true,
+      "libwally_parse": false,
+      "rust_psbt_v2_roundtrip": "invalid-output",
+      "libwally_roundtrip": "rejected"
+    },
+    {
+      "id": "workflow-11",
+      "sha256": "sha256:e4d96e0a5b31d5220f886dd7719173394674af09d8d11bbaef1507320e53df73",
+      "output_script_present": false,
+      "lab_parse": true,
+      "rust_psbt_v2_parse": true,
+      "libwally_parse": false,
+      "rust_psbt_v2_roundtrip": "invalid-output",
+      "libwally_roundtrip": "rejected"
+    },
+    {
+      "id": "workflow-12",
+      "sha256": "sha256:ec2519e0176005f7210d046e56b9ba18649ee555e41b719aa74e987794087919",
+      "output_script_present": false,
+      "lab_parse": true,
+      "rust_psbt_v2_parse": true,
+      "libwally_parse": false,
+      "rust_psbt_v2_roundtrip": "invalid-output",
+      "libwally_roundtrip": "rejected"
+    },
+    {
+      "id": "workflow-13",
+      "sha256": "sha256:ba19408b90f61934ac333eb544fdf16acb9a717054333afb7164981f3910d84c",
+      "output_script_present": true,
+      "lab_parse": true,
+      "rust_psbt_v2_parse": true,
+      "libwally_parse": true,
+      "rust_psbt_v2_roundtrip": "preserved",
+      "libwally_roundtrip": "invalid-output"
+    },
+    {
+      "id": "workflow-14",
+      "sha256": "sha256:a72716e891655f6a21cd40ca19d90ca2edbe5c6865b27b7542f41e6acb0b4d4f",
+      "output_script_present": true,
+      "lab_parse": true,
+      "rust_psbt_v2_parse": true,
+      "libwally_parse": true,
+      "rust_psbt_v2_roundtrip": "preserved",
+      "libwally_roundtrip": "invalid-output"
+    },
+    {
+      "id": "workflow-15",
+      "sha256": "sha256:fe7b4109f1ba5732049e1f1b41f16906983c867d428a687398ec1b6c33b9a639",
+      "output_script_present": true,
+      "lab_parse": true,
+      "rust_psbt_v2_parse": true,
+      "libwally_parse": true,
+      "rust_psbt_v2_roundtrip": "preserved",
+      "libwally_roundtrip": "invalid-output"
+    },
+    {
+      "id": "workflow-16",
+      "sha256": "sha256:fe7b4109f1ba5732049e1f1b41f16906983c867d428a687398ec1b6c33b9a639",
+      "output_script_present": true,
+      "lab_parse": true,
+      "rust_psbt_v2_parse": true,
+      "libwally_parse": true,
+      "rust_psbt_v2_roundtrip": "preserved",
+      "libwally_roundtrip": "invalid-output"
+    }
+  ]
+}
