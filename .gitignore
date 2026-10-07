@@ -6,5 +6,6 @@ __pycache__/
 *.py[cod]
 /interop.yaml
 /spdk-cli/target/
+/gui/target/
 /.checkouts/
 interop.fetched.yaml

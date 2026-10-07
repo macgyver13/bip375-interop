@@ -192,6 +192,32 @@ def test_release_invokes_both_architectures_with_the_selected_config(tmp_path: P
     assert release_legs_ok(legs)
 
 
+def test_release_leg_failure_includes_script_reason(tmp_path: Path):
+    script = tmp_path / "musig2-regtest.sh"
+    script.write_text("#!/bin/sh\n")
+
+    def runner(argv, **kwargs):
+        return subprocess.CompletedProcess(argv, 1, "", "bitcoind is missing")
+
+    legs = invoke_musig2_release(script, runner)
+
+    assert all(leg["reason"] == "bitcoind is missing" for leg in legs)
+
+
+def test_release_passes_allow_dirty_to_regtest_script(tmp_path: Path):
+    script = tmp_path / "musig2-regtest.sh"
+    script.write_text("#!/bin/sh\n")
+    seen = []
+
+    def runner(argv, **kwargs):
+        seen.append(kwargs["env"].get("ALLOW_DIRTY"))
+        return subprocess.CompletedProcess(argv, 0, f"PASS scenario {argv[-1]} txid=1\n", "")
+
+    invoke_musig2_release(script, runner, allow_dirty=True)
+
+    assert seen == ["1", "1"]
+
+
 def _write_plain(scenarios: Path, name: str = "plain", extra: str = "") -> None:
     scenarios.mkdir(exist_ok=True)
     (scenarios / f"{name}.yaml").write_text(f"""

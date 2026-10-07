@@ -1,4 +1,4 @@
-artifact_root: ../artifacts
+artifact_root: artifacts
 allow_dirty: false
 checkouts:
   silent-pay:

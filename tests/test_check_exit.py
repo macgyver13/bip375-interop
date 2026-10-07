@@ -63,6 +63,19 @@ def test_a_regression_fails_the_run(tmp_path: Path, capsys):
     }]
 
 
+def test_progress_events_leave_the_json_summary_on_stdout(tmp_path: Path, capsys):
+    _, args = _setup(tmp_path, "finding")
+
+    assert main([*args, "--progress-json"]) == 0
+
+    output = capsys.readouterr()
+    assert json.loads(output.out)["counts"]["failed"] == 1
+    events = [json.loads(line) for line in output.err.splitlines()]
+    assert [event["stage"] for event in events] == ["preflight", "case-start", "case-done"]
+    assert events[-1]["scenario"] == "musig-a"
+    assert events[-1]["status"] == "failed"
+
+
 def test_without_expectations_any_failure_still_fails_the_run(tmp_path: Path):
     _, args = _setup(tmp_path, None)
 

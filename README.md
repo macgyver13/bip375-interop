@@ -42,6 +42,38 @@ Per-backend prerequisites (full list in [docs/runbook.md](docs/runbook.md#prereq
 
 ## Regression testing
 
+### Guided desktop app
+
+The optional Rust desktop app drives the installed Python CLI and reads its JSON reports.
+From the repository root, after completing Setup:
+
+```sh
+cargo run --manifest-path gui/Cargo.toml
+```
+
+The app defaults to the **BIP-375 + MuSig2 baseline** and **harness** (all code).
+Use **Check setup** to inspect checkout revisions, **Preview cases** to see selection
+and missing PSBTs, then **Verify now**. This full gate applies Caravan and SPDK to
+BIP-375/BIP-376 scenarios and runs both MuSig2-SP regtest architectures. Progress
+shows the active case and completed count; the report shows each status, label, and
+reason. **Open full HTML report** opens the saved report in the default browser.
+A passing exit means the results match `expectations.yaml`, so inspect
+expected findings and blocked cases in the report too. The app needs the same local
+checkouts, builds, Python dependencies, `bitcoind`, and `bitcoin-cli` as the CLI.
+If a baseline checkout is missing, use **Fetch pinned sources**, then select the
+matching fetched profile and build its prerequisites. Fetch writes
+`baseline*/interop.fetched.yaml` and clones exact locked revisions under `.checkouts/`.
+
+Choose a narrower project after changing one codebase. Select the primary BIP-375
+profile for that line, or **Live development** for unpinned work. Each worktree needs
+its own gitignored `interop.yaml`. If it is missing, **Create live profile** copies
+settings from the main checkout when available, or from
+`config/interop.example.yaml`; review the paths before checking setup. **Preview pin
+changes** shows exact revision changes without writing; **Update pins** writes the
+selected profile's `interop.lock` only after review and only for clean checkouts.
+Rerun verification and review `expectations.yaml` when pins move. More detail is in
+[the runbook](docs/runbook.md#desktop-app-and-cli-workflow).
+
 Three configs exist:
 
 - `interop.yaml` (repo root): your live checkouts. Use it while developing a change.
@@ -74,6 +106,8 @@ when a checkout has uncommitted work; the result is then marked non-reproducible
 `check --project X --dry-run` shows what would be selected, and which files changed in
 that checkout since `HEAD` (`--since <rev>` for another baseline), without starting any
 device.
+Add `--progress-json` to `check` to emit one JSON event per case and MuSig2 leg on
+stderr; the final JSON summary remains on stdout. This is what the desktop app uses.
 
 ### Full regression against the baseline
 

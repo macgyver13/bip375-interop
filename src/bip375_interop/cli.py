@@ -15,7 +15,7 @@ from .checkouts import inspect_checkout
 from .expectations import load_expectations
 from .preflight import backend_checkout, run_preflight
 from .regression import has_failures, label_results, previous_results, variance_records
-from .config import LOCK_NAME, load_config, load_scenario, write_lock
+from .config import LOCK_NAME, load_config, load_scenario, read_lock, write_lock
 from .errors import InteropError
 from .models import KNOWN_VALIDATORS
 from .suites import KeyArchitecture
@@ -96,7 +96,8 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--allow-dirty", action="store_true")
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("doctor")
-    sub.add_parser("pin", help="write interop.lock with the current commit id of every checkout")
+    pin_cmd = sub.add_parser("pin", help="write interop.lock with the current commit id of every checkout")
+    pin_cmd.add_argument("--dry-run", action="store_true", help="show pin changes without writing the lock")
     build_cmd = sub.add_parser("build", help="run each checkout's build steps (plan_build)")
     build_cmd.add_argument("only", nargs="*", help="checkout names (default: every one in the profile)")
     build_cmd.add_argument("--dry-run", action="store_true", help="list the steps without running them")
@@ -139,6 +140,7 @@ def _parser() -> argparse.ArgumentParser:
         help="bind a prepared initial PSBT to a MuSig2-SP scenario; may be repeated",
     )
     check.add_argument("--dry-run", action="store_true", help="show the selection without starting workers")
+    check.add_argument("--progress-json", action="store_true", help="emit JSON progress events on stderr")
     treasury = sub.add_parser("treasury-wallet")
     treasury.add_argument("seed_ids", nargs="+", help="published test seed ids, e.g. test-a test-b test-c")
     treasury.add_argument("--network", default="signet")
@@ -272,7 +274,8 @@ def attach_musig2_legs(summary: dict, legs) -> dict:
     return {**summary, "musig2_legs": legs}
 
 
-def invoke_musig2_release(script: Path | None = None, runner=None, config: Path | None = None) -> list[dict]:
+def invoke_musig2_release(script: Path | None = None, runner=None, config: Path | None = None,
+                          on_leg=None, allow_dirty: bool = False) -> list[dict]:
     """Run both MuSig2 key architectures. A leg counts only when it prints PASS."""
 
     import os
@@ -286,8 +289,12 @@ def invoke_musig2_release(script: Path | None = None, runner=None, config: Path 
     env = os.environ.copy()
     if config is not None:
         env["CONFIG"] = str(config)
+    if allow_dirty:
+        env["ALLOW_DIRTY"] = "1"
     legs = []
     for architecture in MUSIG2_RELEASE_ARCHITECTURES:
+        if on_leg is not None:
+            on_leg("start", architecture, None)
         result = runner(
             [str(script), architecture],
             capture_output=True,
@@ -296,7 +303,14 @@ def invoke_musig2_release(script: Path | None = None, runner=None, config: Path 
             env=env,
         )
         stdout = result.stdout if isinstance(result.stdout, str) else ""
-        legs.append(musig2_leg_result(architecture, stdout, result.returncode))
+        leg = musig2_leg_result(architecture, stdout, result.returncode)
+        if not leg["passed"]:
+            stderr = result.stderr if isinstance(result.stderr, str) else ""
+            leg["reason"] = (stderr.strip() or stdout.strip() or
+                             f"regtest script exited {result.returncode} without PASS")[-2000:]
+        legs.append(leg)
+        if on_leg is not None:
+            on_leg("done", architecture, leg["passed"])
     return legs
 
 
@@ -509,8 +523,16 @@ def main(argv: list[str] | None = None) -> int:
                 c.name: inspect_checkout(replace(c, revision=None)).revision
                 for c in config.checkouts.values()
             }
-            write_lock(args.config.parent / LOCK_NAME, pins)
-            print(json.dumps(pins, indent=2))
+            lock_path = args.config.parent / LOCK_NAME
+            if args.dry_run:
+                current = read_lock(lock_path)
+                print(json.dumps({"current": current, "proposed": pins, "changed": {
+                    name: {"from": current.get(name), "to": revision}
+                    for name, revision in pins.items() if current.get(name) != revision
+                }}, indent=2))
+            else:
+                write_lock(lock_path, pins)
+                print(json.dumps(pins, indent=2))
             return 0
         if args.command == "build":
             if args.dry_run:
@@ -537,6 +559,10 @@ def main(argv: list[str] | None = None) -> int:
             }, indent=2))
             return 0
         if args.command == "check":
+            def progress(stage: str, **fields) -> None:
+                if args.progress_json:
+                    print(json.dumps({"stage": stage, **fields}), file=sys.stderr, flush=True)
+
             entries = select(discover(args.scenarios_dir), args.project, config.suites)
             if args.exhaustive or args.release:
                 entries = attach_bip375_validators(entries)
@@ -588,12 +614,15 @@ def main(argv: list[str] | None = None) -> int:
                 entry.scenario for entry in entries
                 if entry.runnable_generated or entry.scenario.name in bindings
             ]
+            progress("preflight", total=len(entries))
             checkout_states = run_preflight(config, runnable)
             batch = BatchRun(config.artifact_root, args.project)
-            for entry in entries:
+            for index, entry in enumerate(entries, 1):
+                progress("case-start", index=index, total=len(entries), scenario=entry.scenario.name)
                 psbt_path = bindings.get(entry.scenario.name)
                 if not entry.runnable_generated and psbt_path is None:
                     batch.add(CaseResult(entry.scenario.name, "blocked", entry.reason))
+                    progress("case-done", index=index, total=len(entries), scenario=entry.scenario.name, status="blocked")
                     continue
                 try:
                     if entry.runnable_generated:
@@ -606,6 +635,8 @@ def main(argv: list[str] | None = None) -> int:
                         batch.add(case_result_for_run(entry.scenario, manifest, generated=False))
                 except InteropError as exc:
                     batch.add(CaseResult(entry.scenario.name, "failed", str(exc)))
+                progress("case-done", index=index, total=len(entries), scenario=entry.scenario.name,
+                         status=batch.results[-1].status)
             expectations_path = args.config.parent / "expectations.yaml"
             labels = None
             expectations = None
@@ -629,7 +660,11 @@ def main(argv: list[str] | None = None) -> int:
                     batch.results, labels, expectations, previous
                 )
             if args.release:
-                summary = attach_musig2_legs(summary, invoke_musig2_release(config=args.config))
+                def leg_progress(stage, architecture, passed):
+                    progress(f"musig2-{stage}", architecture=architecture, passed=passed)
+
+                summary = attach_musig2_legs(summary, invoke_musig2_release(
+                    config=args.config, on_leg=leg_progress, allow_dirty=config.allow_dirty))
                 legs_ok = release_legs_ok(summary["musig2_legs"])
             else:
                 legs_ok = True

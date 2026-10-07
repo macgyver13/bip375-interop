@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from bip375_interop.cli import main
@@ -25,6 +26,18 @@ def test_pin_writes_lock_with_current_tips(tmp_path: Path):
     assert main(["--config", str(config_path), "pin"]) == 0
 
     assert read_lock(tmp_path / "interop.lock") == {"embit": head}
+
+
+def test_pin_dry_run_shows_changes_without_writing(tmp_path: Path, capsys):
+    head = _git_repo(tmp_path / "embit")
+    config_path = tmp_path / "interop.yaml"
+    config_path.write_text(f"checkouts:\n  embit: {{path: {tmp_path / 'embit'}}}\n")
+
+    assert main(["--config", str(config_path), "pin", "--dry-run"]) == 0
+
+    preview = json.loads(capsys.readouterr().out)
+    assert preview["changed"] == {"embit": {"from": None, "to": head}}
+    assert not (tmp_path / "interop.lock").exists()
 
 
 def test_pin_refuses_a_dirty_checkout_even_with_allow_dirty(tmp_path: Path, capsys):
