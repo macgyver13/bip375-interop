@@ -29,6 +29,63 @@ its current status as of the most recent artifact evidence in `artifacts/`. Comp
 
 All commands below run from the repo root with the venv active (`source .venv/bin/activate`).
 
+## Desktop app and CLI workflow
+
+The Rust desktop app is a guided front end to this CLI. Start it with
+`cargo run --manifest-path gui/Cargo.toml` from the repository root. It uses
+`.venv/bin/python` when present, otherwise `python3`, and runs the CLI from the
+repository root. A compiled binary also accepts the repository path as its first
+argument. It does not bundle the Python harness or the external checkouts.
+
+1. Select a profile. **BIP-375 + MuSig2 baseline** is the default full gate;
+   **BIP-375 baseline** covers that pinned line; **Live development** uses the root
+   `interop.yaml`. Select **harness** to check all selected scenarios, or one changed
+   backend for a narrower regression group. A new worktree has no `interop.yaml`
+   because it is gitignored. Use **Create live profile** to copy the main checkout's
+   local settings, or the example config when there is no main checkout profile;
+   review the checkout paths before continuing. If a baseline names checkout paths you
+   do not have, use **Fetch pinned sources**, then select the matching **fetched
+   baseline**. The CLI equivalent is `bip375-interop --config
+   baseline-musig2/interop.yaml fetch`, followed by checks using
+   `baseline-musig2/interop.fetched.yaml`. Build the fetched checkouts as described
+   in Prerequisites before verification.
+2. **Check setup** calls `doctor` and lists checkout revisions and dirty state.
+   **Preview cases** calls `check --dry-run` with the same validator/release selection
+   as the actual run. A blocked case names its missing PSBT or unsupported suite.
+3. **Verify now** runs the check in the background. The progress bar counts cases;
+   the active case or MuSig2 regtest leg is named. At completion, read the coverage,
+   individual labels, and each case's reason. **Open full HTML report** opens the
+   saved report in the default browser; its path remains visible for archival review.
+   A `completed` MuSig2 signing round is not end-to-end proof;
+   only a regtest leg that prints `PASS` is counted as such.
+4. After changing a tested checkout, use **Preview pin changes** to compare its
+   clean current revision with the profile's lock. **Update pins** then writes that
+   lock. Rerun the full check and review `expectations.yaml`; commit the lock and
+   expectation changes together. `pin` refuses dirty checkouts.
+
+The equivalent CLI sequence for the full gate is:
+
+```sh
+bip375-interop --config baseline-musig2/interop.yaml doctor
+bip375-interop --config baseline-musig2/interop.yaml check --project harness --release --dry-run
+bip375-interop --config baseline-musig2/interop.yaml check --project harness --release
+```
+
+Use `--allow-dirty` before the subcommand for a development run. The result then
+records a non-reproducible checkout state. `check --progress-json` emits JSON lines
+on stderr for preflight, case start/completion, and each MuSig2 leg; stdout keeps
+the single final JSON summary. Exit 2 means setup/preflight stopped execution,
+exit 1 means a failing label, no verified case, or a failed release leg, and exit 0
+means the current expectations were met. Exit 0 can still include known findings
+or blocked scenarios, so inspect the report's coverage and reasons.
+
+For a baseline change, preview before writing:
+
+```sh
+bip375-interop --config baseline-musig2/interop.yaml pin --dry-run
+bip375-interop --config baseline-musig2/interop.yaml pin
+```
+
 ## Quick reference
 
 | Scenario | Suite | Backends | Status |
