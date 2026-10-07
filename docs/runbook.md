@@ -52,7 +52,9 @@ argument. It does not bundle the Python harness or the external checkouts.
 2. **Check setup** calls `doctor` and lists checkout revisions and dirty state.
    **Preview cases** calls `check --dry-run` with the same validator/release selection
    as the actual run. A blocked case names its missing PSBT or unsupported suite.
-3. **Verify now** runs the check in the background. The progress bar counts cases;
+3. **Verify now** runs the check in the background. With **BIP-375 + MuSig2 baseline**
+   (or its fetched profile) and **harness**, it starts the full `check --release` gate,
+   including the Interop Lab stage and both MuSig2 regtest legs. The progress bar counts cases;
    the active case or MuSig2 regtest leg is named. At completion, read the coverage,
    individual labels, and each case's reason. **Open full HTML report** opens the
    saved report in the default browser; its path remains visible for archival review.

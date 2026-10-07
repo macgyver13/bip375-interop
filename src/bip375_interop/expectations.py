@@ -16,14 +16,15 @@ STATUSES = ("supported", "finding", "unsupported", "needs-external-psbt", "uncla
 def require_lock_digest(expectations_path: Path, lock_path: Path) -> None:
     """A release expectation applies only to the exact checkout lock it names."""
 
-    expected = _load_yaml(expectations_path).get("lock_sha256")
+    pinned = _load_yaml(expectations_path).get("lock_sha256")
+    expected = pinned.get(lock_path.parent.name) if isinstance(pinned, dict) else pinned
     if not lock_path.is_file():
         raise ConfigurationError(f"release lock is missing: {lock_path}")
     actual = "sha256:" + hashlib.sha256(lock_path.read_bytes()).hexdigest()
     if expected != actual:
         raise ConfigurationError(
             f"{expectations_path} lock_sha256 does not match {lock_path}: "
-            f"expected {actual}"
+            f"expected {expected}, found {actual}"
         )
 
 

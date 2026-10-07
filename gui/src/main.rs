@@ -408,7 +408,7 @@ impl eframe::App for App {
             ui.checkbox(&mut self.allow_dirty, "Include uncommitted checkout changes (result is not reproducible)");
             });
             ui.label(if (self.profile == 1 || self.profile == 4) && self.project == 0 {
-                "Full verification runs BIP-375/BIP-376 with Caravan and SPDK, then both MuSig2 regtest legs."
+                "Full verification runs BIP-375/BIP-376 with Caravan, SPDK, and Interop Lab, then both MuSig2 regtest legs."
             } else {
                 "This selection runs matching scenarios with independent validators. Use the MuSig2 baseline and all code for the full gate."
             });

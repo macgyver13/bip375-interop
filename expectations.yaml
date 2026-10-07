@@ -6,8 +6,10 @@
 #   needs-external-psbt  cannot run in `check` without a PSBT from silent-pay and no
 #                        verified run exists yet
 #   unclassified         outcome not yet triaged; resolve on the stable-pin baseline run
-# Seeded from the 2026-09-18 full run and docs/runbook.md. Tied to baseline/interop.lock.
-lock_sha256: sha256:acc5c77812b8ae86a37d163345b5fa3cf813c02f07e8d72095a73094ee3d175a
+# Seeded from the 2026-09-18 full run and docs/runbook.md. Tied to both baseline locks.
+lock_sha256:
+  baseline: sha256:acc5c77812b8ae86a37d163345b5fa3cf813c02f07e8d72095a73094ee3d175a
+  baseline-musig2: sha256:6007dea48c9bac057ee9827a7c6b8e3d42844c684293c2902eb33bf1e56b2841
 interop_lab_allowed_findings:
   - bundled-js-rejects-unresolved
   - libwally-rejects-unresolved

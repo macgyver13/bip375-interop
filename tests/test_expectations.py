@@ -80,3 +80,25 @@ def test_release_expectations_require_the_exact_lock(tmp_path: Path):
     lock.write_text("checkouts: {changed: abc}\n")
     with pytest.raises(ConfigurationError, match="does not match"):
         require_lock_digest(path, lock)
+
+
+def test_shared_expectations_pin_each_profile_lock(tmp_path: Path):
+    baseline = tmp_path / "baseline"
+    musig = tmp_path / "baseline-musig2"
+    baseline.mkdir()
+    musig.mkdir()
+    first = baseline / "interop.lock"
+    second = musig / "interop.lock"
+    first.write_text("checkouts: {first: abc}\n")
+    second.write_text("checkouts: {second: def}\n")
+    first_digest = hashlib.sha256(first.read_bytes()).hexdigest()
+    second_digest = hashlib.sha256(second.read_bytes()).hexdigest()
+    expectations = _write(tmp_path, f"lock_sha256:\n"
+                                    f"  baseline: sha256:{first_digest}\n"
+                                    f"  baseline-musig2: sha256:{second_digest}\n"
+                                    "scenarios: {}\n")
+    require_lock_digest(expectations, first)
+    require_lock_digest(expectations, second)
+    first.write_bytes(second.read_bytes())
+    with pytest.raises(ConfigurationError, match="does not match"):
+        require_lock_digest(expectations, first)
