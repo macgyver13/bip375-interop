@@ -363,7 +363,9 @@ def _build_per_input_flow(scenario: Scenario) -> tuple[bytes, bytes]:
     from embit.silent_payments import SilentPaymentsPSBT
     from embit.silent_payments.dleq import generate_dleq_proof
     from embit.silent_payments.signing import resolve_input_privkey
-    from embit.silent_payments.sp import _tweak_mul
+    from embit.util.secp256k1 import (
+        EC_COMPRESSED, ec_pubkey_parse, ec_pubkey_serialize, ec_pubkey_tweak_mul,
+    )
     from embit.misc import urandom
 
     raw = build_bip375_fixture(scenario)
@@ -374,8 +376,13 @@ def _build_per_input_flow(scenario: Scenario) -> tuple[bytes, bytes]:
     priv_b = resolve_input_privkey(epsbt.inputs[1], root_b, root_b.my_fingerprint, derive_hdkey)
     scan_key = epsbt.outputs[0].sp_data.scan_key
     scan_key_data = scan_key.sec()
-    share_a = _tweak_mul(scan_key.sec(), priv_a)
-    share_b = _tweak_mul(scan_key.sec(), priv_b)
+    def share_for(private_key: bytes) -> bytes:
+        point = bytearray(ec_pubkey_parse(scan_key_data))
+        ec_pubkey_tweak_mul(point, private_key)
+        return ec_pubkey_serialize(point, EC_COMPRESSED)
+
+    share_a = share_for(priv_a)
+    share_b = share_for(priv_b)
     proof_a = generate_dleq_proof(priv_a, scan_key_data, r=urandom(32))
     proof_b = generate_dleq_proof(priv_b, scan_key_data, r=urandom(32))
 
