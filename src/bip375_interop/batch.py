@@ -30,7 +30,8 @@ class BatchRun:
         self.results.append(result)
 
     def finalize(
-        self, labels: Mapping[str, str] | None = None, checkouts: Sequence[object] = ()
+        self, labels: Mapping[str, str] | None = None, checkouts: Sequence[object] = (),
+        interop_lab_reports: Mapping[str, str] | None = None,
     ) -> tuple[Path, Path]:
         counts = {
             status: sum(item.status == status for item in self.results)
@@ -46,6 +47,8 @@ class BatchRun:
         }
         if checkouts:
             payload["checkouts"] = [asdict(state) for state in checkouts]
+        if interop_lab_reports is not None:
+            payload["interop_lab_reports"] = dict(interop_lab_reports)
         if labels is not None:
             for row in payload["results"]:
                 row["label"] = labels[row["name"]]

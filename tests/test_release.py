@@ -1,3 +1,4 @@
+import hashlib
 import json
 import subprocess
 from pathlib import Path
@@ -53,6 +54,19 @@ def _both_records(snapshots: int = 2) -> list[dict]:
     ]
 
 
+def _lab_record(snapshots: int = 2) -> dict:
+    return {"status": "passed", "snapshots": snapshots, "validated": snapshots}
+
+
+def _write_release_lock(tmp_path: Path) -> None:
+    lock = tmp_path / "interop.lock"
+    lock.write_text("checkouts: {}\n")
+    digest = hashlib.sha256(lock.read_bytes()).hexdigest()
+    (tmp_path / "expectations.yaml").write_text(
+        f"lock_sha256: sha256:{digest}\nscenarios: {{}}\n"
+    )
+
+
 def test_release_profile_attaches_both_validators_without_rewriting_weak_modes(tmp_path: Path):
     plain = _entry(_scenario(), tmp_path / "plain.yaml")
     structural = _entry(_scenario(name="weak", verification="structural"), tmp_path / "weak.yaml")
@@ -82,14 +96,20 @@ def test_release_profile_attaches_both_validators_without_rewriting_weak_modes(t
 
 def test_evidence_requires_both_validators_and_is_not_claimed_when_skipped(tmp_path: Path):
     scenario = _scenario()
-    evidence = manifest_claim_fields(scenario, (), _both_records())
-    assert evidence == {"verification_scope": "evidence", "independent_check": "ran"}
+    evidence = manifest_claim_fields(scenario, (), _both_records(), _lab_record())
+    assert evidence == {"verification_scope": "evidence", "independent_check": "ran",
+                        "interop_lab_check": "passed"}
+
+    lab_skipped = manifest_claim_fields(scenario, (), _both_records())
+    assert lab_skipped["verification_scope"] == "not-evidence"
+    assert lab_skipped["reason"] == "interop-lab-skipped"
 
     skipped = manifest_claim_fields(scenario, (), ())
     assert skipped == {
         "verification_scope": "not-evidence",
         "reason": "validator-skipped",
         "independent_check": "not-run",
+        "interop_lab_check": "not-run",
     }
     structural_skipped = manifest_claim_fields(_scenario(verification="structural"), (), ())
     assert structural_skipped["reason"] == "structural"
@@ -265,6 +285,7 @@ def test_release_preflight_rejects_a_missing_build_instead_of_skipping(tmp_path:
         f"  caravan: {{path: {caravan}}}\n"
         f"  spdk: {{path: {spdk}}}\n"
     )
+    _write_release_lock(tmp_path)
     monkeypatch.setattr(
         "bip375_interop.preflight.default_spdk_binary",
         lambda: tmp_path / "missing-spdk-cli",
@@ -289,9 +310,10 @@ def test_release_caravan_rejection_fails_the_case(tmp_path: Path, capsys, monkey
     _write_plain(scenarios)
     config = tmp_path / "interop.yaml"
     config.write_text(f"artifact_root: {tmp_path / 'artifacts'}\n")
+    _write_release_lock(tmp_path)
     seen = {}
 
-    def boom(_config, scenario):
+    def boom(_config, scenario, **_kwargs):
         seen["validators"] = scenario.validators
         raise CaravanValidationError("caravan rejected 1 PSBT(s): final.psbt: bad script")
 
@@ -319,6 +341,41 @@ def test_release_caravan_rejection_fails_the_case(tmp_path: Path, capsys, monkey
     assert report["counts"]["passed"] == 0
 
 
+def test_release_lab_not_run_fails_even_when_expected_finding(tmp_path: Path, capsys, monkeypatch):
+    scenarios = tmp_path / "scenarios"
+    _write_plain(scenarios)
+    config = tmp_path / "interop.yaml"
+    config.write_text(f"artifact_root: {tmp_path / 'artifacts'}\n")
+    _write_release_lock(tmp_path)
+    expectations = tmp_path / "expectations.yaml"
+    expectations.write_text(expectations.read_text().replace(
+        "scenarios: {}", "scenarios:\n  plain:\n    status: finding\n    reason: known issue"
+    ))
+    manifest = tmp_path / "run.json"
+    manifest.write_text(json.dumps({
+        "verification_scope": "not-evidence", "reason": "interop-lab-skipped",
+        "validators": [{"name": "caravan", "status": "passed", "snapshots": 1, "validated": 1},
+                       {"name": "spdk", "status": "passed", "snapshots": 1, "validated": 1}],
+        "interop_lab": {"status": "not-run", "reason": "Docker is missing"},
+    }))
+    monkeypatch.setattr("bip375_interop.cli.run_preflight", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr("bip375_interop.cli._run_generated_scenario",
+                        lambda *_args, **_kwargs: (tmp_path / "final.psbt", manifest, 1))
+    monkeypatch.setattr("bip375_interop.cli.invoke_musig2_release",
+                        lambda **_kwargs: [
+                            {"architecture": name, "passed": True, "line": "PASS"}
+                            for name in ("aggregate-then-derive", "derive-then-aggregate")
+                        ])
+
+    assert main(["--config", str(config), "check", "--release",
+                 "--scenarios-dir", str(scenarios)]) == 1
+    summary = json.loads(capsys.readouterr().out)
+    report = json.loads(Path(summary["manifest"]).read_text())
+    assert report["results"][0]["label"] == "STEADY"
+    assert report["results"][0]["reason"] == "Docker is missing"
+    assert Path(summary["interop_lab_reports"]["junit"]).parent == Path(summary["manifest"]).parent
+
+
 def test_release_summary_with_no_pass_line_fails(tmp_path: Path, capsys, monkeypatch):
     scenarios = tmp_path / "scenarios"
     scenarios.mkdir()
@@ -332,6 +389,7 @@ signers:
 """)
     config = tmp_path / "interop.yaml"
     config.write_text(f"artifact_root: {tmp_path / 'artifacts'}\n")
+    _write_release_lock(tmp_path)
     monkeypatch.setattr(
         "bip375_interop.cli.invoke_musig2_release",
         lambda *args, **kwargs: [

@@ -313,6 +313,36 @@ run's own PSBT snapshots after the real signers are done. A scenario opts in wit
 script prints `PASS`. A missing Caravan dist or `spdk-cli` binary is a preflight
 error, not a skipped validator. Opt-in scenarios are the two dedicated cases below.
 
+### Interop Lab release stage
+
+`bip375-interop validate-psbt path/to/file.psbt` checks one file through the local
+parser, Caravan, SPDK (when the file is fully signed), and the pinned PSBT Interop Lab
+`0.11.0` parser/native-adapter matrix. It prints `passed`, `failed`, or `not run` for
+each stage and an overall `passed`, `failed`, or `partial` verdict. A missing Docker
+daemon, image, or `npx` makes the Lab stage `not run` with a reason. SPDK is `not run`
+for an intermediate PSBT. A failed stage makes the command exit nonzero.
+
+`check --release` runs Interop Lab on every PSBT snapshot produced by each BIP-375
+scenario, alongside Caravan on every snapshot and SPDK on the final PSBT. Its run
+manifest records all four stage results and the individual Lab findings. The batch
+directory contains `report.json`, `interop-lab.junit.xml`, and `interop-lab.sarif`.
+Docker images for the pinned native adapters must already be built; the stage does
+not pull or replace them during a release check.
+
+`expectations.yaml` names the exact `baseline/interop.lock` SHA-256 and the allowed
+Interop Lab findings. The release gate checks that digest before running and never
+rewrites either file. The four allowed findings describe observed behavior in
+Interop Lab 0.11.0: bundled JS and libwally reject unresolved SP outputs; rust-psbt-v2
+adds an empty output script on roundtrip; libwally drops a zero global
+`TX_MODIFIABLE` field. Other parser failures or PSBT field changes fail the stage.
+
+The manifest claims `evidence` only for a full, strict, intent-declaring BIP-375 run
+with both independent validators passed and Interop Lab passed on every snapshot.
+Missing Docker or another `not run` stage is `not-evidence`, even if signing completed.
+Structural and combiner modes keep their weaker scope. A Lab pass with an explicitly
+allowed finding records that finding; it does not claim that the affected adapter
+roundtrips the PSBT unchanged.
+
 ### `bip375-caravan-coldcard-jade-two-way` -- working
 
 Caravan's own TypeScript `PsbtV2` re-parses **every** PSBT snapshot the run wrote
@@ -361,14 +391,17 @@ from this repo's own `spdk-cli/`, not from that checkout -- same split as
 passing: `artifacts/20260917T031027.444777Z-bip375-spdk-coldcard-jade-two-way-70dc8619/` --
 `validated: 1` (just `final.psbt`).
 
-**Gotcha found while building this**: an input that already carries
-`PSBT_IN_FINAL_SCRIPTWITNESS` (key `0x08`) -- SeedSigner's embit fork sets this directly
-at signing time, real Coldcard/Jade output never does -- is treated by `finalize()` as
-already finalized and passed through unchanged, rather than rebuilt from the raw
-`tap_key_sig`/`partial_sig` field. Doesn't weaken the check (`interpreter_check` still
-verifies whatever ends up in the witness either way), but it means hand-tampering a
-SeedSigner-signed PSBT for a negative test has to corrupt *both* fields, not just the
-raw signature record, or `finalize()` silently uses the untouched pre-built witness.
+**SeedSigner/embit finalization issue**: its taproot signing path sets both
+`PSBT_IN_TAP_KEY_SIG` and `PSBT_IN_FINAL_SCRIPTWITNESS` (key `0x08`) during signing.
+BIP-376 assigns the witness construction to the Input Finalizer, which must then
+remove `PSBT_IN_TAP_KEY_SIG` and the SP spend fields. BIP-370 requires the finalizer
+to retain the five v2 input transaction fields needed for extraction. Coldcard and
+Jade return signing fields without prematurely finalizing their inputs.
+`spdk-cli` treats an existing final witness as finalized and verifies that witness;
+it does not rebuild it from `tap_key_sig`. This still verifies the extracted spend,
+but a negative test that changes only `tap_key_sig` does not change the spend being
+verified. The upstream embit behavior should be corrected; Jade and Coldcard do not
+need to read final witnesses to address it.
 
 ## BIP-376 (Silent Payment spend) scenarios
 

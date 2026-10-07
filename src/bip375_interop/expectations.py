@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
@@ -10,6 +11,32 @@ from .config import _load_yaml
 from .errors import ConfigurationError
 
 STATUSES = ("supported", "finding", "unsupported", "needs-external-psbt", "unclassified")
+
+
+def require_lock_digest(expectations_path: Path, lock_path: Path) -> None:
+    """A release expectation applies only to the exact checkout lock it names."""
+
+    expected = _load_yaml(expectations_path).get("lock_sha256")
+    if not lock_path.is_file():
+        raise ConfigurationError(f"release lock is missing: {lock_path}")
+    actual = "sha256:" + hashlib.sha256(lock_path.read_bytes()).hexdigest()
+    if expected != actual:
+        raise ConfigurationError(
+            f"{expectations_path} lock_sha256 does not match {lock_path}: "
+            f"expected {actual}"
+        )
+
+
+def interop_lab_allowed_findings(path: Path) -> set[str]:
+    from .interop_lab import KNOWN_FINDINGS
+
+    values = _load_yaml(path).get("interop_lab_allowed_findings", [])
+    if not isinstance(values, list) or any(not isinstance(item, str) for item in values):
+        raise ConfigurationError(f"{path} interop_lab_allowed_findings must be a list of names")
+    unknown = set(values) - set(KNOWN_FINDINGS)
+    if unknown:
+        raise ConfigurationError(f"unknown Interop Lab findings: {', '.join(sorted(unknown))}")
+    return set(values)
 
 
 @dataclass(frozen=True)

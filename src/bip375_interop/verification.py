@@ -741,11 +741,12 @@ def manifest_claim_fields(
     scenario: Scenario,
     repairs: Sequence[object] = (),
     validator_records: Sequence = (),
+    interop_lab: dict | None = None,
 ) -> dict[str, str]:
     """Scope fields for a run manifest.
 
     ``evidence`` only when the scenario is full, strict, intent-declaring
-    bip375 and both release-gate validators checked at least one snapshot.
+    bip375, both release-gate validators ran, and Interop Lab checked every snapshot.
     A full intent-bound bip375 run with no validator records is
     ``not-evidence`` with reason ``validator-skipped``. Structural, combiner,
     and MuSig2 claims keep their existing reasons.
@@ -755,6 +756,8 @@ def manifest_claim_fields(
 
     fields = _scope_fields(run_claim(scenario, repairs=repairs, generated=True))
     records = list(validator_records)
+    lab_status = "not-run" if interop_lab is None else str(interop_lab.get("status", "not-run"))
+    fields["interop_lab_check"] = lab_status
     if not records:
         fields["independent_check"] = "not-run"
         if "verification_scope" not in fields:
@@ -765,18 +768,34 @@ def manifest_claim_fields(
         fields["independent_check"] = "ran"
         return fields
     snapshots = {
-        str(item["name"]): int(item.get("snapshots", item.get("validated", 0)))
+        str(item["name"]): int(item.get("validated", 0))
         for item in records
+        if item.get("status", "passed") == "passed"
+        and int(item.get("validated", 0)) == int(item.get("snapshots", 0))
     }
     release_ran = all(snapshots.get(name, 0) > 0 for name in KNOWN_VALIDATORS)
+    lab_ran = (
+        interop_lab is not None
+        and lab_status == "passed"
+        and int(interop_lab.get("snapshots", 0)) > 0
+        and interop_lab.get("validated") == interop_lab.get("snapshots")
+    )
     if (
         release_ran
+        and lab_ran
         and scenario.suite == "bip375"
         and scenario.verification == "full"
         and scenario.merge_policy == "strict"
         and not repairs
         and declares_intent(scenario)
     ):
-        return {"verification_scope": "evidence", "independent_check": "ran"}
+        return {"verification_scope": "evidence", "independent_check": "ran",
+                "interop_lab_check": "passed"}
     fields["independent_check"] = "ran"
+    if "verification_scope" not in fields:
+        fields["verification_scope"] = "not-evidence"
+        fields["reason"] = (
+            "validator-skipped" if not release_ran else
+            "interop-lab-failed" if lab_status == "failed" else "interop-lab-skipped"
+        )
     return fields

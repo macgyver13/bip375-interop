@@ -1,10 +1,14 @@
+import hashlib
 from pathlib import Path
 
 import pytest
 
 from bip375_interop.catalog import discover
 from bip375_interop.errors import ConfigurationError
-from bip375_interop.expectations import Expectation, load_expectations, require_coverage
+from bip375_interop.expectations import (
+    Expectation, interop_lab_allowed_findings, load_expectations,
+    require_coverage, require_lock_digest,
+)
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -62,3 +66,17 @@ def test_repository_expectations_cover_every_scenario():
     names = [entry.scenario.name for entry in discover(ROOT / "scenarios")]
 
     require_coverage(expectations, names)
+
+
+def test_release_expectations_require_the_exact_lock(tmp_path: Path):
+    lock = tmp_path / "interop.lock"
+    lock.write_text("checkouts: {}\n")
+    digest = hashlib.sha256(lock.read_bytes()).hexdigest()
+    path = _write(tmp_path, f"lock_sha256: sha256:{digest}\n"
+                            "interop_lab_allowed_findings: [libwally-rejects-unresolved]\n"
+                            "scenarios: {}\n")
+    require_lock_digest(path, lock)
+    assert interop_lab_allowed_findings(path) == {"libwally-rejects-unresolved"}
+    lock.write_text("checkouts: {changed: abc}\n")
+    with pytest.raises(ConfigurationError, match="does not match"):
+        require_lock_digest(path, lock)
