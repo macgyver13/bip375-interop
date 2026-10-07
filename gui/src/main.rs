@@ -1,5 +1,6 @@
 use eframe::egui;
 use serde_json::Value;
+use std::ffi::OsStr;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -271,6 +272,37 @@ fn report_url(path: &Path) -> Result<Url, String> {
     Url::from_file_path(&path).map_err(|()| format!("invalid HTML report path: {}", path.display()))
 }
 
+fn cli_path(
+    root: &Path,
+    inherited: &OsStr,
+    home: Option<&OsStr>,
+) -> Result<std::ffi::OsString, String> {
+    let mut paths = Vec::new();
+    let venv_bin = root.join(".venv/bin");
+    if venv_bin.is_dir() {
+        paths.push(venv_bin);
+    }
+    paths.extend(std::env::split_paths(inherited));
+    paths.extend([
+        PathBuf::from("/opt/homebrew/bin"),
+        PathBuf::from("/usr/local/bin"),
+    ]);
+    if let Some(home) = home {
+        paths.push(PathBuf::from(home).join(".local/bin"));
+        paths.push(PathBuf::from(home).join(".cargo/bin"));
+    }
+    paths.dedup();
+    std::env::join_paths(paths).map_err(|error| error.to_string())
+}
+
+fn check_mode(config: &str, project: &str) -> &'static str {
+    if project == "harness" && config.starts_with("baseline-musig2/") {
+        "--release"
+    } else {
+        "--exhaustive"
+    }
+}
+
 fn run_cli(
     root: &Path,
     config: &str,
@@ -289,15 +321,15 @@ fn run_cli(
     command
         .current_dir(root)
         .env("PYTHONPATH", root.join("src"))
+        .env(
+            "PATH",
+            cli_path(
+                root,
+                &std::env::var_os("PATH").unwrap_or_default(),
+                std::env::var_os("HOME").as_deref(),
+            )?,
+        )
         .args(["-m", "bip375_interop.cli", "--config", config]);
-    if root.join(".venv/bin/python").is_file() {
-        let mut paths = vec![root.join(".venv/bin")];
-        paths.extend(std::env::split_paths(
-            &std::env::var_os("PATH").unwrap_or_default(),
-        ));
-        let path = std::env::join_paths(paths).map_err(|error| error.to_string())?;
-        command.env("PATH", path);
-    }
     if allow_dirty && action != Action::PinPreview && action != Action::Pin {
         command.arg("--allow-dirty");
     }
@@ -310,19 +342,11 @@ fn run_cli(
         }
         Action::Preview => {
             command.args(["check", "--project", project, "--dry-run"]);
-            if project == "harness" && !config.starts_with("baseline/") {
-                command.arg("--release");
-            } else {
-                command.arg("--exhaustive");
-            }
+            command.arg(check_mode(config, project));
         }
         Action::Check => {
             command.args(["check", "--project", project, "--progress-json"]);
-            if project == "harness" && !config.starts_with("baseline/") {
-                command.arg("--release");
-            } else {
-                command.arg("--exhaustive");
-            }
+            command.arg(check_mode(config, project));
         }
         Action::PinPreview => {
             command.args(["pin", "--dry-run"]);
@@ -558,7 +582,8 @@ fn main() -> eframe::Result {
 
 #[cfg(test)]
 mod tests {
-    use super::{create_live_profile, live_profile_source, report_url};
+    use super::{check_mode, cli_path, create_live_profile, live_profile_source, report_url};
+    use std::ffi::OsStr;
     use std::path::Path;
     use std::process::Command;
 
@@ -645,5 +670,42 @@ mod tests {
         assert_eq!(url.scheme(), "file");
         assert!(url.as_str().contains("%20report%20"));
         std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn only_musig2_harness_uses_release_gate() {
+        assert_eq!(check_mode("interop.yaml", "harness"), "--exhaustive");
+        assert_eq!(
+            check_mode("baseline/interop.yaml", "harness"),
+            "--exhaustive"
+        );
+        assert_eq!(
+            check_mode("baseline-musig2/interop.yaml", "harness"),
+            "--release"
+        );
+        assert_eq!(
+            check_mode("baseline-musig2/interop.fetched.yaml", "harness"),
+            "--release"
+        );
+        assert_eq!(
+            check_mode("baseline-musig2/interop.yaml", "jade"),
+            "--exhaustive"
+        );
+    }
+
+    #[test]
+    fn cli_path_finds_user_tools_from_a_desktop_app() {
+        let root = Path::new("/tmp/interop");
+        let path = cli_path(
+            root,
+            OsStr::new("/usr/bin:/bin"),
+            Some(OsStr::new("/Users/test")),
+        )
+        .unwrap();
+        let paths: Vec<_> = std::env::split_paths(&path).collect();
+        assert!(paths.contains(&Path::new("/opt/homebrew/bin").to_path_buf()));
+        assert!(paths.contains(&Path::new("/usr/local/bin").to_path_buf()));
+        assert!(paths.contains(&Path::new("/Users/test/.local/bin").to_path_buf()));
+        assert!(paths.contains(&Path::new("/Users/test/.cargo/bin").to_path_buf()));
     }
 }

@@ -3,6 +3,10 @@ name = "bip375-interop-gui"
 version = "0.1.0"
 edition = "2021"
 
+[package.metadata.bundle]
+name = "BIP375-Interop"
+identifier = "io.github.macgyver13.bip375-interop"
+
 [dependencies]
 eframe = "0.36.2"
 serde_json = "1"

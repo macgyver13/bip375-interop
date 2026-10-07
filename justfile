@@ -9,6 +9,8 @@ doctor *args:
 validate scenario:
     PYTHONPATH={{project_root}}/src python3 -m bip375_interop.cli --config {{project_root}}/interop.yaml validate {{scenario}}
 
+gui:
+    cargo r -r --manifest-path gui/Cargo.toml
 
 # Release gate: both validators on every bip375 scenario, plus both MuSig2 regtest legs.
 release *args:
