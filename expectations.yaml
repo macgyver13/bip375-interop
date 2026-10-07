@@ -7,7 +7,7 @@
 #                        verified run exists yet
 #   unclassified         outcome not yet triaged; resolve on the stable-pin baseline run
 # Seeded from the 2026-09-18 full run and docs/runbook.md. Tied to baseline/interop.lock.
-lock_sha256: sha256:c40d42a45cf0860daf2d94ee4d487d90fe5654ca2207895a340a7d844cdc08b7
+lock_sha256: sha256:acc5c77812b8ae86a37d163345b5fa3cf813c02f07e8d72095a73094ee3d175a
 interop_lab_allowed_findings:
   - bundled-js-rejects-unresolved
   - libwally-rejects-unresolved

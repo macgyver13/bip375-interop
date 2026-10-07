@@ -1,9 +1,9 @@
 # Commit id of every checkout the expectations apply to. Written by `pin`.
 checkouts:
   caravan: b3b39754619a9cc06d9c92801927e5639bbd60e7
-  coldcard: d210635d04606354e08e492f53908fe230d75462
-  embit: f18d23bd5e089693198dcaaa15429040aad6e600
-  jade: 3cf19c81ee6137a77dd4e0d880c3a4b1348810cf
-  seedsigner: 4f8442f4012275891f1b4557399e8f62a0226abc
-  silent-pay: 765af1c3c899a005f9eb4f8cb3b6a7c24db81d4e
+  coldcard: 388f2b8d88736c189294e3f171af43058dcc0757
+  embit: 371b9f28371ad34ab2c5d8f156ec00829ff3c4b9
+  jade: 871950a901720538e848d3e3a437b24adefedd66
+  seedsigner: 3ac91816b184a36ed263bd2d064c752887b76838
+  silent-pay: 7fbb684aba91739e74c79e4aa6deaa0be7aee9a3
   spdk: 5c8a3823d0addf6f481f81f86cb3f58604cab5d4
