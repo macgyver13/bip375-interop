@@ -43,6 +43,8 @@ scenarios:
     summary = json.loads(capsys.readouterr().out)
     assert summary["labels"] == {"NOT-RUN": 1, "STEADY": 1}
     assert summary["counts"]["blocked"] == 2
+    # musig-a is blocked as its expectation says; musig-b is supported, so its block is not
+    assert summary["expected"] == {"failed": 0, "blocked": 1}
     assert summary["variances"] == [{
         "scenario": "musig-b",
         "label": "NOT-RUN",

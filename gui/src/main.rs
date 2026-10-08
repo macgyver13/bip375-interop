@@ -496,8 +496,15 @@ impl eframe::App for App {
                     if has_issue {
                         ui.colored_label(egui::Color32::RED, "Action needed: review the cases and MuSig2 legs below.");
                     }
-                    ui.label(format!("Passed: {}   Failed: {}   Blocked: {}   Completed without full evidence: {}",
-                        counts["passed"], counts["failed"], counts["blocked"], counts["completed"]));
+                    let expected = &summary["expected"];
+                    ui.label(format!("Passed: {}   Failed: {} ({} expected)   Blocked: {} ({} expected)   Completed without full evidence: {}",
+                        counts["passed"], counts["failed"], expected["failed"].as_u64().unwrap_or(0),
+                        counts["blocked"], expected["blocked"].as_u64().unwrap_or(0), counts["completed"]));
+                    let lab_skipped = self.report.as_ref().and_then(|report| report["results"].as_array())
+                        .map_or(0, |results| results.iter().filter(|case| case["reason"] == "interop-lab-skipped").count());
+                    if lab_skipped > 0 {
+                        ui.label(format!("{lab_skipped} completed cases passed Caravan and SPDK; only Interop Lab is missing, which the release check runs."));
+                    }
                     if let Some(results) = self.report.as_ref().and_then(|report| report["results"].as_array()) {
                         for (prefix, title) in [("bip375-", "BIP-375"), ("bip376-", "BIP-376"), ("musig2-sp-", "MuSig2 + Silent Payments")] {
                             let cases: Vec<_> = results.iter().filter(|case| case["name"].as_str().is_some_and(|name| name.starts_with(prefix))).collect();

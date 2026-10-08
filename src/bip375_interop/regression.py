@@ -53,6 +53,18 @@ def label_results(
     }
 
 
+def expected_counts(results: Sequence[CaseResult], labels: Mapping[str, str]) -> dict[str, int]:
+    """Failed and blocked cases whose outcome matches their expectation (STEADY or CHANGED)."""
+
+    return {
+        status: sum(
+            result.status == status and labels[result.name] in (STEADY, "CHANGED")
+            for result in results
+        )
+        for status in ("failed", "blocked")
+    }
+
+
 def variance_records(
     results: Sequence[CaseResult],
     labels: Mapping[str, str],

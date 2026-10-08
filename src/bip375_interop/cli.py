@@ -17,7 +17,9 @@ from .expectations import (
 )
 from .interop_lab import validate_snapshots, write_reports
 from .preflight import backend_checkout, run_preflight
-from .regression import has_failures, label_results, previous_results, variance_records
+from .regression import (
+    expected_counts, has_failures, label_results, previous_results, variance_records,
+)
 from .config import LOCK_NAME, load_config, load_scenario, read_lock, write_lock
 from .errors import InteropError
 from .models import KNOWN_VALIDATORS
@@ -795,6 +797,7 @@ def main(argv: list[str] | None = None) -> int:
             }
             if labels is not None:
                 summary["labels"] = payload["label_counts"]
+                summary["expected"] = expected_counts(batch.results, labels)
                 summary["variances"] = variance_records(
                     batch.results, labels, expectations, previous
                 )
