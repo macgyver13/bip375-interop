@@ -108,7 +108,9 @@ def previous_results(
         return None
     earlier = sorted(
         path for path in batches.iterdir()
-        if f"-{project}-" in path.name and path.name < current.name and (path / "report.json").is_file()
+        # Batch names are <stamp>-<project>-<id>; a project name may contain "-".
+        if path.name.split("-", 1)[-1].rsplit("-", 1)[0] == project
+        and path.name < current.name and (path / "report.json").is_file()
     )
     if not earlier:
         return None

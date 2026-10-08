@@ -95,3 +95,17 @@ def test_only_unexpected_or_untriaged_labels_fail_a_run():
     assert has_failures({"a": "UNCLASSIFIED"})
     assert has_failures({"a": "NEW"})
     assert not has_failures({"a": "STEADY", "b": "FIXED", "c": "CHANGED", "d": "NOT-RUN"})
+
+
+def test_previous_results_does_not_take_a_project_whose_name_contains_this_one(tmp_path: Path):
+    seedsigner = BatchRun(tmp_path, "seedsigner")
+    seedsigner.add(CaseResult("a", "passed"))
+    seedsigner.finalize()
+    bitsaga = BatchRun(tmp_path, "bitsaga-seedsigner")
+    bitsaga.add(CaseResult("a", "failed", "bitsaga"))
+    bitsaga.finalize()
+    current = BatchRun(tmp_path, "seedsigner")
+
+    assert previous_results(tmp_path, "seedsigner", current.path) == {
+        "a": {"status": "passed", "reason": None}
+    }

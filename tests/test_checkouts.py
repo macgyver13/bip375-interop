@@ -290,3 +290,35 @@ def test_caravan_lock_rewrite_is_a_known_byproduct(tmp_path: Path):
     state = inspect_checkout(Checkout("caravan", tmp_path))
     assert not state.dirty
     assert state.byproducts == ("package-lock.json",)
+
+
+def test_git_warnings_on_stderr_do_not_reach_the_revision(tmp_path: Path, monkeypatch):
+    from bip375_interop import checkouts
+
+    real_run = subprocess.run
+
+    def noisy(argv, **kwargs):
+        result = real_run(argv, **kwargs)
+        if kwargs.get("stderr") == subprocess.STDOUT:
+            result.stdout = b"warning: noisy\n" + (result.stdout or b"")
+        else:
+            result.stderr = b"warning: noisy\n" + (result.stderr or b"")
+        return result
+
+    real_check_output = subprocess.check_output
+
+    def noisy_check_output(argv, **kwargs):
+        out = real_check_output(argv, **kwargs)
+        return b"warning: noisy\n" + out if kwargs.get("stderr") == subprocess.STDOUT else out
+
+    monkeypatch.setattr(checkouts.subprocess, "run", noisy)
+    monkeypatch.setattr(checkouts.subprocess, "check_output", noisy_check_output)
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    subprocess.run(["git", "-C", str(repo), "-c", "user.email=t@t", "-c", "user.name=t",
+                    "commit", "-q", "--allow-empty", "-m", "c"], check=True)
+    head = subprocess.run(["git", "-C", str(repo), "rev-parse", "HEAD"],
+                          capture_output=True, text=True, check=True).stdout.strip()
+
+    assert checkouts._git(Checkout("embit", repo), "rev-parse", "HEAD").decode() == head

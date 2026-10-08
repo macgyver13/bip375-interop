@@ -42,12 +42,14 @@ def _byproduct(checkout: Checkout, line: str) -> str | None:
 
 
 def _git(checkout: Checkout, *args: str) -> bytes:
+    # stderr stays separate: a warning on success must not reach a revision or
+    # the porcelain status lines.
     try:
-        return subprocess.check_output(
-            ["git", "-C", str(checkout.path), *args], stderr=subprocess.STDOUT
-        ).strip()
+        return subprocess.run(
+            ["git", "-C", str(checkout.path), *args], capture_output=True, check=True,
+        ).stdout.strip()
     except subprocess.CalledProcessError as exc:
-        detail = exc.output.decode(errors="replace").strip()
+        detail = (exc.stderr or exc.stdout).decode(errors="replace").strip()
         raise CheckoutError(f"{checkout.name}: git {' '.join(args)} failed: {detail}") from exc
 
 

@@ -159,7 +159,8 @@ impl App {
                     if stage == "case-done" {
                         self.completed = value["index"].as_u64().unwrap_or(0) as usize;
                     } else if stage == "musig2-start" {
-                        self.total += 2;
+                        // One start event per regtest leg, each finished by one musig2-done.
+                        self.total += 1;
                     } else if stage == "musig2-done" {
                         self.completed += 1;
                     }
