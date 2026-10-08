@@ -20,19 +20,22 @@
 
 use std::fs;
 
-use psbt::roles::{ExtractorPsbtExt, InputWitnessFinalizerPsbtExt};
-use psbt::Psbt;
+use psbt_v2::{Extractor, Finalizer, Psbt};
 use secp256k1::Secp256k1;
 
 fn validate_one(path: &str) -> Result<(), String> {
     let secp = Secp256k1::verification_only();
     let bytes = fs::read(path).map_err(|err| format!("read: {err}"))?;
     let psbt = Psbt::deserialize(&bytes).map_err(|err| format!("deserialize: {err}"))?;
-    let finalized = psbt.finalize().map_err(|err| format!("finalize: {err}"))?;
+    let finalized = Finalizer::new(psbt)
+        .map_err(|err| format!("finalize: {err}"))?
+        .finalize(&secp)
+        .map_err(|err| format!("finalize: {err}"))?;
     finalized
         .interpreter_check(&secp)
         .map_err(|err| format!("interpreter_check: {err}"))?;
-    finalized
+    Extractor::new(finalized)
+        .map_err(|err| format!("extract_tx: {err}"))?
         .extract_tx()
         .map_err(|err| format!("extract_tx: {err}"))?;
     Ok(())

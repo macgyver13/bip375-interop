@@ -8,8 +8,8 @@
 #   unclassified         outcome not yet triaged; resolve on the stable-pin baseline run
 # Seeded from the 2026-09-18 full run and docs/runbook.md. Tied to both baseline locks.
 lock_sha256:
-  baseline: sha256:45b56eea05dacb892d03526dc7e6ec2b9524ff641cd7fa4651a12dee3a6f164d
-  baseline-musig2: sha256:89a6c0b6fd563b645d6b6ad240dca1e1481a8acb43481e95ed06d0725267c551
+  baseline: sha256:b77fd8f8543ee5a1f7cb87e6f2d9124ecaf5e06a9b61a32056c7afd0390a850a
+  baseline-musig2: sha256:b51583da4ebbfcbdc3aacbc9bf3f295d36003eab6acb54aa983c35e7dd00e845
 interop_lab_allowed_findings:
   - bundled-js-rejects-unresolved
   - libwally-rejects-unresolved
