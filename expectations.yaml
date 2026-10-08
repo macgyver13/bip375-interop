@@ -8,7 +8,7 @@
 #   unclassified         outcome not yet triaged; resolve on the stable-pin baseline run
 # Seeded from the 2026-09-18 full run and docs/runbook.md. Tied to both baseline locks.
 lock_sha256:
-  baseline: sha256:acc5c77812b8ae86a37d163345b5fa3cf813c02f07e8d72095a73094ee3d175a
+  baseline: sha256:7dfd0d5d4e0b7121c83ce39d3bffc2f235f42d92110c297cf6c0754dd7ab75bd
   baseline-musig2: sha256:6007dea48c9bac057ee9827a7c6b8e3d42844c684293c2902eb33bf1e56b2841
 interop_lab_allowed_findings:
   - bundled-js-rejects-unresolved
@@ -49,12 +49,12 @@ scenarios:
     reason: passes, final PSBT also verified by the SPDK validator
     reference: docs/runbook.md
   bip375-coldcard-jade-two-way-redundant-sign:
-    status: finding
-    reason: Coldcard rejects a second sign pass, Jade accepts it
+    status: supported
+    reason: passes, both devices return an already fully signed SP PSBT unchanged
     reference: docs/runbook.md
   bip375-coldcard-jade-two-way-taproot-sighash-default:
     status: finding
-    reason: neither device rejects a non-ALL sighash with an SP output present
+    reason: both devices accept SIGHASH_DEFAULT on a taproot input (BIP-375 0.1.4), Caravan and SPDK reject it
     reference: docs/runbook.md
   bip375-seedsigner-coldcard-two-way:
     status: unsupported

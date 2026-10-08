@@ -99,8 +99,8 @@ bip375-interop --config baseline-musig2/interop.yaml pin
 | `bip375-jade-two-way` | bip375 | jade x2 | **Working** (same-backend) |
 | `bip375-coldcard-two-way` | bip375 | coldcard x2 | **Working** (same-backend) |
 | `bip375-three-way` | bip375 | coldcard, jade, seedsigner | Blocked at `seedsigner-c` (see below); `coldcard-a`/`jade-b` contribute cleanly |
-| `bip375-coldcard-jade-two-way-taproot-sighash-default` | bip375 | coldcard, jade | **Finding, not working** -- neither device rejects a non-ALL sighash with an SP output present (see below) |
-| `bip375-coldcard-jade-two-way-redundant-sign` | bip375 | coldcard, jade | **Finding, not working** -- Coldcard rejects a second `sign` pass, Jade accepts it (see below) |
+| `bip375-coldcard-jade-two-way-taproot-sighash-default` | bip375 | coldcard, jade | **Finding**: both devices complete; Caravan and SPDK reject SIGHASH_DEFAULT (see below) |
+| `bip375-coldcard-jade-two-way-redundant-sign` | bip375 | coldcard, jade | **Working**: both devices return a fully signed PSBT unchanged (see below) |
 | `bip375-caravan-coldcard-jade-two-way` | bip375 | coldcard, jade | **Working** (also validated by the `caravan` validator, see below) |
 | `bip375-spdk-coldcard-jade-two-way` | bip375 | coldcard, jade | **Working** (also validated by the `spdk` validator, see below) |
 | `bip375-seedsigner-jade-two-way` | bip375 | seedsigner, jade | Blocked (SeedSigner cannot co-own a plain BIP-375 send, see below) |
@@ -249,40 +249,32 @@ even be generated: it declared a P2TR input before `build_bip375_fixture` suppor
 and a second `change` output, which the fixture builder's single-SP-output contract
 rejects -- simplified to one SP payment sized to leave a 1,000 sat fee.)
 
-### `bip375-coldcard-jade-two-way-taproot-sighash-default` -- finding: neither device enforces the SIGHASH_ALL requirement
+### `bip375-coldcard-jade-two-way-taproot-sighash-default`: finding, the validators reject SIGHASH_DEFAULT
 
-BIP-375 requires a signer to reject a PSBT that carries a sighash type other than
-SIGHASH_ALL on any input while a Silent Payment output is present. `coldcard-a`'s input
-0 is generated with `sighash: default` (see `fixtures.py`) to probe this:
+`coldcard-a`'s input 0 is generated with `sighash: default` (see `fixtures.py`), an
+explicit PSBT_IN_SIGHASH_TYPE of 0 on a P2TR input:
 
 ```bash
 bip375-interop run-generated scenarios/bip375-coldcard-jade-two-way-taproot-sighash-default.yaml
 ```
 
-Neither device performs the required rejection. Instead the run fails on an unrelated
-harness invariant -- strict merge's "no field may disappear" rule -- once `jade-b`'s
-`resolve-sign` round returns a contribution with input 0's `sighash_type` (0x03) *entirely
-absent*, not merely rewritten:
+BIP-375 0.1.4 accepts SIGHASH_DEFAULT on taproot inputs, as BIP-352 recommends, so this
+is no longer a device compliance probe. Both devices handle it: Coldcard accepts ALL or
+DEFAULT, and Jade keeps the field on the input it does not own. Jade used to drop it,
+which failed strict merge with `contribution omits input 0 sighash_type (03)`; libwally
+stored a sighash of 0 the same as "not given". Fixed by libwally's `has_sighash`
+(macgyver13/libwally-core `sp-core`, first commit) and Jade `sp-musig` 80b94ce5.
 
-```
-error: contribution omits input 0 sighash_type (03)
-```
+The signing rounds now complete, and the case fails at the validators instead. Both
+still apply the pre-0.1.4 rule:
 
-Confirmed against `artifacts/20260917T000348.221541Z-bip375-coldcard-jade-two-way-taproot-sighash-default-b8261853/`:
-`01-contribute-coldcard-a-merged.psbt` still carries input 0's SIGHASH_DEFAULT unchanged
-(Coldcard's own `contribute` round on its own SIGHASH_DEFAULT input does not fail as
-BIP-375 requires -- it happily contributes its Silent Payment ECDH share and proof
-instead), and `02-resolve-sign-jade-b-returned.psbt` has *no* sighash_type key at all on
-input 0 (confirmed by direct inspection, not just the diff summary). Jade's own input 1
-already carried SIGHASH_ALL from generation, so this run does not show whether Jade
-rewrites a SIGHASH_DEFAULT input of its own -- only that it silently drops the field on
-an input it does not own, rather than either preserving it or rejecting the PSBT.
-Coldcard's `sign` round (where it would sign its own SIGHASH_DEFAULT input) was never
-reached, since the harness aborts at the first violation. Findings, not fixture
-accommodations: BIP-375 compliance gaps on both Coldcard and Jade, worth reporting
-upstream.
+- Caravan rejects every snapshot with `PsbtV2 input 0 uses non-SIGHASH_ALL (0) with
+  silent payments` (`packages/caravan-psbt/src/psbtv2/psbtv2.ts`).
+- SPDK's finalizer, from rust-psbt, fails with `Finalizer sighash type error`:
+  `check_partial_sigs_sighash_type` converts every input's sighash to an ECDSA type,
+  and 0 is not one, even on a taproot input.
 
-### `bip375-coldcard-jade-two-way-redundant-sign` -- finding: Coldcard rejects, Jade accepts a second `sign` pass
+### `bip375-coldcard-jade-two-way-redundant-sign`: working
 
 `redundant_sign_round: true` appends a `redundant-sign` round (all signers, after the
 scenario's normal rounds) that hands every signer the already-fully-signed PSBT:
@@ -291,18 +283,12 @@ scenario's normal rounds) that hands every signer the already-fully-signed PSBT:
 bip375-interop run-generated scenarios/bip375-coldcard-jade-two-way-redundant-sign.yaml
 ```
 
-Coldcard rejects immediately:
-
-```
-error: Coldcard Error: Transaction looks completely signed already?
-```
-
-Jade does not: the same redundant pass against a same-backend two-Jade scenario
-(`bip375-jade-two-way`, same `redundant_sign_round: true` addition) completes without
-error -- Jade accepts and re-returns an already-complete PSBT rather than rejecting it.
-Both behaviors are spec-legal (BIP-375 does not mandate rejecting a redundant sign
-request); recorded here as a device-behavior finding, not something the harness works
-around.
+Both devices treat it as a no-op and return the PSBT unchanged, so the redundant round
+adds no field. Coldcard used to refuse with `Coldcard Error: Transaction looks
+completely signed already?`, an upstream guard that ran before any Silent Payment
+check. For a PSBT with SP outputs, Coldcard now skips that refusal, still verifies the
+ECDH shares, DLEQ proofs and output scripts, and signs nothing (`sp-core-pinned`
+733fe43b). A PSBT without SP outputs keeps the upstream refusal.
 
 ## Validators (caravan, spdk)
 
