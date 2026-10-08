@@ -37,6 +37,8 @@ KNOWN_FINDINGS = (
     "libwally-rejects-unresolved",
     "rust-psbt-v2-adds-empty-script",
     "libwally-drops-zero-tx-modifiable",
+    "libwally-drops-taproot-sighash-all",
+    "libwally-drops-taproot-sighash-default",
 )
 
 
@@ -48,7 +50,25 @@ def _unresolved(psbt: bytes) -> bool:
 
 
 def _has_silent_payment(psbt: bytes) -> bool:
-    return any(output.get(b"\x09") is not None for output in parse_psbt(psbt).outputs)
+    """An SP output (BIP-375) or an input spending an SP output (BIP-376: tweak, derivation)."""
+
+    parsed = parse_psbt(psbt)
+    return any(output.get(b"\x09") is not None for output in parsed.outputs) or any(
+        entry.key[:1] in (b"\x1f", b"\x20") for input_ in parsed.inputs for entry in input_.entries
+    )
+
+
+def _spends_taproot(input_) -> bool:
+    utxo = input_.get(b"\x01")
+    return utxo is not None and utxo[9:11] == b"\x51\x20"
+
+
+def _has_taproot_sighash_all_signature(input_) -> bool:
+    return any(
+        (entry.key == b"\x13" or (entry.key[:1] == b"\x14" and len(entry.key) == 65))
+        and len(entry.value) == 65 and entry.value[-1] == 1
+        for entry in input_.entries
+    )
 
 
 def _known_roundtrip_change(adapter: str, before: bytes, after: bytes) -> str | None:
@@ -67,11 +87,28 @@ def _known_roundtrip_change(adapter: str, before: bytes, after: bytes) -> str | 
             return "rust-psbt-v2-adds-empty-script"
     if (adapter == "libwally" and _has_silent_payment(before) and not _unresolved(before)
             and not (diff.added or diff.modified)):
-        if len(diff.removed) == 1 and all(
-            item.scope == "global" and item.key_hex == "06" and item.before_hex == "00"
-            for item in diff.removed
-        ):
-            return "libwally-drops-zero-tx-modifiable"
+        inputs = parse_psbt(before).inputs
+        zero_tx_modifiable = [
+            item for item in diff.removed
+            if item.scope == "global" and item.key_hex == "06" and item.before_hex == "00"
+        ]
+        # An explicit DEFAULT may be dropped; ALL requires a signature carrying that byte.
+        taproot_sighash = [
+            item for item in diff.removed
+            if item.scope == "input" and item.key_hex == "03"
+            and _spends_taproot(inputs[item.index])
+            and (item.before_hex == "00000000" or (
+                item.before_hex == "01000000"
+                and _has_taproot_sighash_all_signature(inputs[item.index])
+            ))
+        ]
+        if len(zero_tx_modifiable) + len(taproot_sighash) == len(diff.removed):
+            if any(item.before_hex == "00000000" for item in taproot_sighash):
+                return "libwally-drops-taproot-sighash-default"
+            if taproot_sighash:
+                return "libwally-drops-taproot-sighash-all"
+            if len(zero_tx_modifiable) == 1:
+                return "libwally-drops-zero-tx-modifiable"
     return "unexpected-roundtrip-change"
 
 

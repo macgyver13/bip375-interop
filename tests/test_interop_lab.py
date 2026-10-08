@@ -4,6 +4,8 @@ from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from bip375_interop.cli import _run_validators, case_result_for_run, main
 from bip375_interop.checkouts import CheckoutState
 from bip375_interop.errors import InteropError
@@ -178,3 +180,94 @@ def test_release_case_fails_when_independent_validator_is_missing(tmp_path):
     result = case_result_for_run(scenario, manifest, generated=True, release=True)
     assert result.status == "failed"
     assert "release validators" in result.reason
+
+
+def _sp_spend(
+    tx_modifiable: bytes, script: bytes, signature: PsbtEntry | None = None,
+    sighash: int = 1,
+) -> bytes:
+    """A BIP-376 spend: SP tweak and spend derivation on the input, no SP output."""
+
+    return PsbtV2(
+        PsbtMap((
+            PsbtEntry(b"\xfb", (2).to_bytes(4, "little")),
+            PsbtEntry(b"\x02", (2).to_bytes(4, "little")),
+            PsbtEntry(b"\x04", b"\x01"),
+            PsbtEntry(b"\x05", b"\x01"),
+            PsbtEntry(b"\x06", tx_modifiable),
+        )),
+        (PsbtMap((
+            PsbtEntry(b"\x01", (5000).to_bytes(8, "little") + bytes([len(script)]) + script),
+            PsbtEntry(b"\x03", sighash.to_bytes(4, "little")),
+            PsbtEntry(b"\x0e", b"\x11" * 32),
+            PsbtEntry(b"\x0f", (0).to_bytes(4, "little")),
+            PsbtEntry(b"\x1f" + b"\x02" + b"\x44" * 32, b"\x00" * 4),
+            PsbtEntry(b"\x20", b"\x55" * 32),
+            *((signature,) if signature is not None else ()),
+        )),),
+        (PsbtMap((PsbtEntry(b"\x03", (4000).to_bytes(8, "little")),
+                  PsbtEntry(b"\x04", b"\x00\x14" + b"\x66" * 20))),),
+    ).serialize()
+
+
+def _drop(raw: bytes, global_keys=(), input_keys=()) -> bytes:
+    parsed = PsbtV2(*_parts(raw))
+    return replace(
+        parsed,
+        globals=PsbtMap(tuple(e for e in parsed.globals.entries if e.key not in global_keys)),
+        inputs=tuple(PsbtMap(tuple(e for e in i.entries if e.key not in input_keys))
+                     for i in parsed.inputs),
+    ).serialize()
+
+
+P2TR = b"\x51\x20" + b"\x77" * 32
+P2WPKH = b"\x00\x14" + b"\x88" * 20
+
+
+def test_libwally_zero_tx_modifiable_drop_is_known_on_a_silent_payment_spend():
+    raw = _sp_spend(b"\x00", P2WPKH)
+    assert _known_roundtrip_change("libwally", raw, _drop(raw, global_keys={b"\x06"})) == \
+        "libwally-drops-zero-tx-modifiable"
+
+
+def test_libwally_taproot_sighash_all_drop_is_known_and_only_on_taproot():
+    signature = PsbtEntry(b"\x13", b"\x99" * 64 + b"\x01")
+    raw = _sp_spend(b"\x00", P2TR, signature)
+    dropped = _drop(raw, global_keys={b"\x06"}, input_keys={b"\x03"})
+    assert _known_roundtrip_change("libwally", raw, dropped) == \
+        "libwally-drops-taproot-sighash-all"
+
+    segwit = _sp_spend(b"\x00", P2WPKH, signature)
+    dropped = _drop(segwit, global_keys={b"\x06"}, input_keys={b"\x03"})
+    assert _known_roundtrip_change("libwally", segwit, dropped) == "unexpected-roundtrip-change"
+
+
+def test_libwally_taproot_script_signature_can_carry_sighash_all():
+    signature = PsbtEntry(b"\x14" + b"\x88" * 64, b"\x99" * 64 + b"\x01")
+    raw = _sp_spend(b"\x00", P2TR, signature)
+    dropped = _drop(raw, input_keys={b"\x03"})
+    assert _known_roundtrip_change("libwally", raw, dropped) == \
+        "libwally-drops-taproot-sighash-all"
+
+
+def test_libwally_taproot_sighash_default_drop_is_a_distinct_finding():
+    raw = _sp_spend(b"\x00", P2TR, sighash=0)
+    dropped = _drop(raw, global_keys={b"\x06"}, input_keys={b"\x03"})
+    assert _known_roundtrip_change("libwally", raw, dropped) == \
+        "libwally-drops-taproot-sighash-default"
+
+    segwit = _sp_spend(b"\x00", P2WPKH, sighash=0)
+    dropped = _drop(segwit, global_keys={b"\x06"}, input_keys={b"\x03"})
+    assert _known_roundtrip_change("libwally", segwit, dropped) == "unexpected-roundtrip-change"
+
+
+@pytest.mark.parametrize("signature", [
+    None,
+    PsbtEntry(b"\x13", b"\x99" * 64),
+    PsbtEntry(b"\x13", b"\x99" * 64 + b"\x00"),
+    PsbtEntry(b"\x14" + b"\x88" * 64, b"\x99" * 64 + b"\x02"),
+])
+def test_libwally_taproot_sighash_all_drop_requires_signature_carrying_all(signature):
+    raw = _sp_spend(b"\x00", P2TR, signature)
+    dropped = _drop(raw, global_keys={b"\x06"}, input_keys={b"\x03"})
+    assert _known_roundtrip_change("libwally", raw, dropped) == "unexpected-roundtrip-change"

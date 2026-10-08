@@ -15,6 +15,8 @@ interop_lab_allowed_findings:
   - libwally-rejects-unresolved
   - rust-psbt-v2-adds-empty-script
   - libwally-drops-zero-tx-modifiable
+  - libwally-drops-taproot-sighash-all
+  - libwally-drops-taproot-sighash-default
 scenarios:
   bip375-caravan-coldcard-jade-two-way:
     status: supported
