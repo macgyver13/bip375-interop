@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 
@@ -146,7 +147,7 @@ def test_seedsigner_plans_only_upstream_plain_bip375_worker(tmp_path: Path) -> N
         "--backend",
         "seedsigner",
     )
-    assert worker.env["PYTHONPATH"].split(":")[0] == str(adapter.checkout / "src")
+    assert worker.env["PYTHONPATH"].split(os.pathsep)[0] == str(adapter.checkout / "src")
     assert worker.env["WORKER_CASE"] == "plain"
 
 
@@ -163,7 +164,6 @@ def test_bitsaga_plans_plain_and_musig2_workers(tmp_path: Path) -> None:
         "tests/test_musig2_sp.py",
         "tests/test_flows_musig2.py",
     )
-    assert adapter.plan_worker().argv[-2:] == ("--backend", "bitsaga")
     assert adapter.plan_worker().argv[-2:] == ("--backend", "bitsaga")
 
 

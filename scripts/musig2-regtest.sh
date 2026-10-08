@@ -94,7 +94,7 @@ if [ -n "${INITIAL_ONLY:-}" ]; then
 fi
 
 echo "== scenario $SCENARIO"
-harness run "scenarios/$SCENARIO.yaml" --psbt "$WORK/initial/initial.psbt" > "$WORK/run.json"
+harness run "$ROOT/scenarios/$SCENARIO.yaml" --psbt "$WORK/initial/initial.psbt" > "$WORK/run.json"
 FINAL=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["final_psbt"])' "$WORK/run.json")
 OUT=$(dirname "$FINAL")
 

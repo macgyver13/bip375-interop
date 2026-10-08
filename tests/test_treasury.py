@@ -98,3 +98,11 @@ def test_derive_signer_xpub_rejects_unknown_seed() -> None:
     pytest.importorskip("embit")
     with pytest.raises(ConfigurationError):
         derive_signer_xpub("not-a-real-seed")
+
+
+def test_treasury_refuses_mainnet():
+    from bip375_interop.errors import ConfigurationError
+    from bip375_interop.treasury import _embit_network_name
+
+    with pytest.raises(ConfigurationError, match="mainnet"):
+        _embit_network_name("mainnet")

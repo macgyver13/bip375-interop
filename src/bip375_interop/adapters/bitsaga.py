@@ -5,7 +5,6 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
-import os
 from pathlib import Path
 from typing import Mapping
 
@@ -80,20 +79,6 @@ class BitSagaAdapter:
             ),
             cwd=self.checkout_dir,
             env=env,
-        )
-
-    def plan_worker(self) -> CommandPlan:
-        python_path = str(self.checkout_dir / "src")
-        if os.environ.get("PYTHONPATH"):
-            python_path += os.pathsep + os.environ["PYTHONPATH"]
-        return CommandPlan(
-            name="bitsaga-external-worker",
-            argv=(
-                self.python_executable, "-m", "bip375_interop.signer_worker",
-                "--backend", "bitsaga",
-            ),
-            cwd=self.checkout_dir,
-            env={"PYTHONPATH": python_path},
         )
 
     def plan_worker(

@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 from bip375_interop.batch import BatchRun, CaseResult
 

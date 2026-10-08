@@ -111,8 +111,9 @@ def build_wallet_toml(
     )
 
 
+# No mainnet: the keys come from published test seeds, and ACCOUNT_PATH uses
+# the test-network coin type (1h).
 _EMBIT_NETWORK_NAMES = {
-    "mainnet": "main",
     "testnet": "test",
     "signet": "signet",
     "regtest": "regtest",
