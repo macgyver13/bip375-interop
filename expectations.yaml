@@ -9,7 +9,7 @@
 # Seeded from the 2026-09-18 full run and docs/runbook.md. Tied to both baseline locks.
 lock_sha256:
   baseline: sha256:b77fd8f8543ee5a1f7cb87e6f2d9124ecaf5e06a9b61a32056c7afd0390a850a
-  baseline-musig2: sha256:b51583da4ebbfcbdc3aacbc9bf3f295d36003eab6acb54aa983c35e7dd00e845
+  baseline-musig2: sha256:87a10dbe1d3c76e7fd37fa8b9913f661cfce8996194ae489dbc7c8d6f1241936
 interop_lab_allowed_findings:
   - bundled-js-rejects-unresolved
   - libwally-rejects-unresolved
@@ -92,11 +92,11 @@ scenarios:
     reference: docs/runbook.md
   bip376-jade-two-way-sp-spend-to-p2tr:
     status: supported
-    reason: passes since the sign_psbt.c fix that clears inputs/outputs-modifiable per BIP-370 after a plain-spend sign; not yet pinned, fix is uncommitted in the Jade fork
+    reason: passes with pinned Jade 80b94ce, which clears inputs/outputs-modifiable after a plain-spend sign
     reference: docs/runbook.md
   bip376-jade-two-way-sp-spend-to-p2wpkh:
     status: supported
-    reason: passes since the sign_psbt.c fix that clears inputs/outputs-modifiable per BIP-370 after a plain-spend sign; not yet pinned, fix is uncommitted in the Jade fork
+    reason: passes with pinned Jade 80b94ce, which clears inputs/outputs-modifiable after a plain-spend sign
     reference: docs/runbook.md
   bip376-jade-two-way-sp-spend-to-sp:
     status: supported
@@ -108,11 +108,11 @@ scenarios:
     reference: docs/runbook.md
   bip376-seedsigner-jade-sp-spend-to-p2tr:
     status: supported
-    reason: passes since the serialise_psbt fix that adds WALLY_PSBT_SERIALIZE_FLAG_REDUNDANT, preserving sighash_type on an already-finalized co-owned input; not yet pinned, fix is uncommitted in the Jade fork
+    reason: passes with pinned Jade 80b94ce, which preserves sighash_type on an already-finalized co-owned input
     reference: docs/runbook.md
   bip376-seedsigner-jade-sp-spend-to-p2wpkh:
     status: supported
-    reason: passes since the serialise_psbt fix that adds WALLY_PSBT_SERIALIZE_FLAG_REDUNDANT, preserving sighash_type on an already-finalized co-owned input; not yet pinned, fix is uncommitted in the Jade fork
+    reason: passes with pinned Jade 80b94ce, which preserves sighash_type on an already-finalized co-owned input
     reference: docs/runbook.md
   bip376-seedsigner-jade-sp-spend-to-sp:
     status: unsupported
