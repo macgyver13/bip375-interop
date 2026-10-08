@@ -84,7 +84,7 @@ class WorkerClient:
         self._process = self._factory(
             list(self.argv), cwd=self.cwd, env=environment,
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            text=True, bufsize=1,
+            text=True, errors="replace", bufsize=1,
             start_new_session=True,
         )
         self._stdout_buffer = b""
@@ -148,8 +148,9 @@ class WorkerClient:
         process, self._process = self._process, None
         if process is None:
             return
-        if process.poll() is None:
-            self._signal_group(process, signal.SIGTERM)
+        # Even when the worker itself has exited, an emulator it started may
+        # still be running in its group.
+        self._signal_group(process, signal.SIGTERM)
         try:
             process.wait(timeout=5)
         except subprocess.TimeoutExpired:
@@ -185,14 +186,20 @@ class WorkerClient:
         orphaned: a bare SIGTERM bypasses Python's `finally` blocks entirely,
         so the worker's own `close()` (which would stop its child) never runs.
         `start()` puts the worker in a new session so its group can be signaled
-        without also hitting the harness's own process.
+        without also hitting the harness's own process. That makes the group id
+        the worker's pid, which stays valid after the worker exits while any
+        process in the group is alive.
         """
-        if hasattr(os, "killpg") and hasattr(os, "getpgid"):
+        if hasattr(os, "killpg"):
             try:
-                os.killpg(os.getpgid(process.pid), sig)
+                os.killpg(process.pid, sig)
                 return
-            except (ProcessLookupError, PermissionError, OSError):
+            except ProcessLookupError:
+                return
+            except (PermissionError, OSError):
                 pass
+        if process.poll() is not None:
+            return
         if sig == signal.SIGKILL:
             process.kill()
         else:

@@ -150,3 +150,38 @@ def test_process_request_times_out_with_stdout_open(tmp_path: Path, monkeypatch)
             worker.process_psbt(b"psbt\xfffixture", "shares")
     finally:
         worker.stop()
+
+
+def test_stop_signals_the_group_even_after_the_worker_exited(monkeypatch):
+    """The worker may be gone while the emulator it started is still running."""
+
+    class ExitedProcess:
+        pid = 4242
+
+        def poll(self):
+            return 1
+
+        def wait(self, timeout=None):
+            return 1
+
+    signaled = []
+    monkeypatch.setattr("os.killpg", lambda pgid, sig: signaled.append((pgid, sig)))
+    worker = WorkerClient(["unused"], cwd=Path("."))
+    worker._process = ExitedProcess()
+    worker.stop()
+    assert signaled[0][0] == 4242
+
+
+def test_worker_survives_non_utf8_stderr(tmp_path: Path):
+    script = tmp_path / "noisy_worker.py"
+    script.write_text(
+        "import runpy, sys\n"
+        "sys.stderr.buffer.write(b'emulator \\xff\\xfe boot\\n'); sys.stderr.flush()\n"
+        f"runpy.run_path({str(Path(__file__).with_name('fake_worker.py'))!r}, run_name='__main__')\n"
+    )
+    instance_dir = tmp_path / "instance"
+    worker = WorkerClient([sys.executable, str(script)], cwd=tmp_path)
+    worker.start("bip375", "test-a", instance_dir)
+    assert worker.process_psbt(b"psbt", "shares").psbt == b"psbt"
+    worker.stop()
+    assert "emulator" in (instance_dir / "worker.stderr.log").read_text()

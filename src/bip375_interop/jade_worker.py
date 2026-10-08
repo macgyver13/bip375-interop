@@ -101,9 +101,11 @@ class JadeWorker:
         if self._registered_descriptor == descriptor:
             return
         try:
-            jade.register_descriptor(network, "bip375-interop", descriptor, {})
+            registered = jade.register_descriptor(network, "bip375-interop", descriptor, {})
         except Exception as exc:
             raise WorkerRequestError("jade_setup_failed", str(exc)) from exc
+        if registered is False:
+            raise WorkerRequestError("jade_setup_failed", "Jade rejected the descriptor")
         self._registered_descriptor = descriptor
 
     def close(self) -> None:
@@ -120,6 +122,7 @@ class JadeWorker:
                     self._qemu.wait(timeout=5)
                 except subprocess.TimeoutExpired:
                     self._qemu.kill()
+                    self._qemu.wait()
             self._qemu = None
         for stream in (self._qemu_stdout, self._qemu_stderr):
             if stream is not None:
@@ -150,6 +153,9 @@ class JadeWorker:
                         jade.disconnect()
                     except Exception:
                         pass
+                    if self._qemu is not None and self._qemu.poll() is not None:
+                        error = RuntimeError(f"QEMU exited with code {self._qemu.returncode}")
+                        break
                     self._sleep(1)
             if self._jade is None:
                 self.close()

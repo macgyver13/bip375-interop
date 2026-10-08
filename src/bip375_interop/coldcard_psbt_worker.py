@@ -102,6 +102,7 @@ class ColdcardPsbtWorker:
                     self._simulator.wait(timeout=5)
                 except subprocess.TimeoutExpired:
                     self._simulator.kill()
+                    self._simulator.wait()
             self._simulator = None
         for stream in (self._simulator_stdout, self._simulator_stderr):
             if stream is not None:
@@ -109,6 +110,9 @@ class ColdcardPsbtWorker:
         self._simulator_stdout = None
         self._simulator_stderr = None
         self._device = None
+        # A new simulator starts unseeded and with nothing enrolled.
+        self._mnemonic = None
+        self._enrolled_descriptor = None
 
     def _open(self, mnemonic: str) -> Any:
         if self._device is None:

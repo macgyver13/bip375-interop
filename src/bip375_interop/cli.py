@@ -173,28 +173,34 @@ def _start_workers(config, scenario, run_artifacts, descriptor: str | None = Non
 
     workers = {}
     states = []
-    for signer in scenario.signers:
-        checkout_name = backend_checkout(signer.backend)
-        checkout = config.checkouts.get(checkout_name)
-        if checkout is None:
-            raise InteropError(f"missing checkout configuration for {checkout_name}")
-        states.append(inspect_checkout(checkout, config.allow_dirty))
-        adapter = {
-            "seedsigner": SeedSignerAdapter,
-            "jade": JadeAdapter,
-            "coldcard": ColdcardAdapter,
-            "bitsaga": BitSagaAdapter,
-            "bitsaga-seedsigner": BitSagaAdapter,
-        }.get(signer.backend)
-        if adapter is None:
-            raise InteropError(f"backend {signer.backend} has no external PSBT worker yet")
-        plan = adapter(checkout.path).plan_worker()
-        worker = WorkerClient(plan.argv, cwd=plan.cwd, env=plan.env)
-        worker.start(
-            scenario.suite, signer.seed_id, run_artifacts.path / signer.name,
-            scenario.network, descriptor=descriptor,
-        )
-        workers[signer.name] = worker
+    try:
+        for signer in scenario.signers:
+            checkout_name = backend_checkout(signer.backend)
+            checkout = config.checkouts.get(checkout_name)
+            if checkout is None:
+                raise InteropError(f"missing checkout configuration for {checkout_name}")
+            states.append(inspect_checkout(checkout, config.allow_dirty))
+            adapter = {
+                "seedsigner": SeedSignerAdapter,
+                "jade": JadeAdapter,
+                "coldcard": ColdcardAdapter,
+                "bitsaga": BitSagaAdapter,
+                "bitsaga-seedsigner": BitSagaAdapter,
+            }.get(signer.backend)
+            if adapter is None:
+                raise InteropError(f"backend {signer.backend} has no external PSBT worker yet")
+            plan = adapter(checkout.path).plan_worker()
+            worker = WorkerClient(plan.argv, cwd=plan.cwd, env=plan.env)
+            worker.start(
+                scenario.suite, signer.seed_id, run_artifacts.path / signer.name,
+                scenario.network, descriptor=descriptor,
+            )
+            workers[signer.name] = worker
+    except BaseException:
+        # The caller never sees a partial dict, so it cannot stop these itself.
+        for started in workers.values():
+            started.stop()
+        raise
     return workers, states
 
 

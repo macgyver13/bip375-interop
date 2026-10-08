@@ -1,6 +1,8 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from bip375_interop.cli import main
 
 
@@ -61,3 +63,45 @@ outputs:
     assert "not-evidence" in text
     assert str(final) in text
     assert str(manifest) in text
+
+
+def test_start_workers_stops_started_workers_when_a_later_one_fails(tmp_path: Path, monkeypatch):
+    from types import SimpleNamespace
+
+    from bip375_interop import cli
+    from bip375_interop.models import Scenario
+
+    stopped = []
+
+    class FakeWorker:
+        def __init__(self, argv, **kwargs):
+            self.name = argv[0]
+
+        def start(self, *args, **kwargs):
+            if self.name == "coldcard":
+                raise cli.InteropError("coldcard failed to start")
+
+        def stop(self):
+            stopped.append(self.name)
+
+    def adapter(name):
+        return lambda path: SimpleNamespace(
+            plan_worker=lambda: SimpleNamespace(argv=(name,), cwd=path, env={}))
+
+    monkeypatch.setattr(cli, "WorkerClient", FakeWorker)
+    monkeypatch.setattr(cli, "JadeAdapter", adapter("jade"))
+    monkeypatch.setattr(cli, "ColdcardAdapter", adapter("coldcard"))
+    monkeypatch.setattr(cli, "inspect_checkout", lambda checkout, allow_dirty: None)
+    config = SimpleNamespace(allow_dirty=False, checkouts={
+        "jade": SimpleNamespace(path=tmp_path), "coldcard": SimpleNamespace(path=tmp_path),
+    })
+    scenario = Scenario.from_dict({
+        "name": "case", "suite": "bip375", "network": "regtest",
+        "signers": [
+            {"name": "b", "backend": "jade", "seed_id": "test-b"},
+            {"name": "a", "backend": "coldcard", "seed_id": "test-a"},
+        ],
+    })
+    with pytest.raises(cli.InteropError, match="coldcard failed"):
+        cli._start_workers(config, scenario, SimpleNamespace(path=tmp_path))
+    assert stopped == ["jade"]
