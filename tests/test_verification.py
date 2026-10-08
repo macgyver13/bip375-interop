@@ -778,3 +778,54 @@ def test_recorded_repair_is_not_a_pass(tmp_path: Path):
     written = json.loads(manifest.read_text())
     assert written["verification_scope"] == "not-evidence"
     assert written["repairs"] == repairs
+
+
+def test_completion_check_rejects_explicit_sighash_default_byte():
+    """BIP-341: SIGHASH_DEFAULT is a 64-byte signature; a trailing 0x00 is invalid."""
+    from embit import bip32, bip39
+    from embit.psbt import SIGHASH, derive_hdkey
+    from embit.silent_payments import SilentPaymentsPSBT
+    from embit.silent_payments.signing import match_sp_spend_base
+
+    scenario = _single_owner_scenario()
+    psbt = SilentPaymentsPSBT.parse(build_bip375_fixture(scenario))
+    root = bip32.HDKey.from_seed(bip39.mnemonic_to_seed(mnemonic_for("test-a")))
+    psbt.sign_with(root, sighash=SIGHASH.ALL)
+    base = match_sp_spend_base(psbt.inputs[2], root, root.my_fingerprint, derive_hdkey)
+    psbt.sign_input_with_sp_tweak(base, 2)
+    parsed = parse_psbt(psbt.serialize())
+    inputs = list(parsed.inputs)
+    inputs[2] = PsbtMap(tuple(
+        entry if entry.key_type != 0x13 else PsbtEntry(entry.key, entry.value + b"\x00")
+        for entry in inputs[2].entries
+    ))
+    padded = PsbtV2(parsed.globals, tuple(inputs), parsed.outputs).serialize()
+    with pytest.raises(VerificationError, match="sighash byte 0x00"):
+        verify_bip375_completion(scenario, padded)
+
+
+def test_musig2_round2_checks_sp_outputs_the_scenario_does_not_declare():
+    scenario = Scenario.from_dict({
+        "name": "external", "suite": "musig2-sp", "network": "regtest",
+        "signers": [
+            {"name": "a", "backend": "coldcard", "seed_id": "test-a"},
+            {"name": "b", "backend": "jade", "seed_id": "test-b"},
+        ],
+    })
+    psbt = _musig2_psbt(
+        [(b"\x1c" + b"\x00" * 33, b"sig-a"), (b"\x1c" + b"\x01" * 33, b"sig-b")],
+        resolved=False,
+    )
+    with pytest.raises(VerificationError, match="unresolved Silent Payment script"):
+        verify_musig2_sp_completion(scenario, "round2", psbt.serialize())
+
+
+def test_intent_less_external_run_checks_only_the_psbt():
+    scenario = Scenario.from_dict({
+        "name": "external", "suite": "bip375", "network": "regtest",
+        "signers": [{"name": "a", "backend": "coldcard", "seed_id": "test-a"}],
+    })
+    declared = _single_owner_scenario()
+    verify_bip375_completion(scenario, _fully_signed_single_owner(declared))
+    with pytest.raises(VerificationError, match="unresolved output script"):
+        verify_bip375_completion(scenario, build_bip375_fixture(declared))

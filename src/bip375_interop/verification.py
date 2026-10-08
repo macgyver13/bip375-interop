@@ -312,6 +312,11 @@ def _verify_input_signature(
     # taproot, so either is a genuine signature over the owner's output key.
     if len(sig) == 65:
         sighash = sig[64]
+        if sighash == 0:
+            raise VerificationError(
+                f"input {index} taproot signature has an explicit sighash byte 0x00, "
+                "which BIP-341 forbids"
+            )
         sig = sig[:64]
     elif len(sig) == 64:
         sighash = 0
@@ -350,6 +355,26 @@ def _verify_bip375_structural(scenario: Scenario, psbt: bytes) -> None:
         if required not in key_types:
             name = "taproot key signature" if required == _TAP_KEY_SIGNATURE else "partial signature"
             raise VerificationError(f"input {index} is missing a {name}")
+    _check_tx_modifiable(parsed)
+
+
+def _verify_bip375_consistency(psbt: bytes) -> None:
+    """For a run that declares no inputs or outputs: only what the PSBT shows.
+
+    No owners, so no signature can be checked against a key. Every output
+    has a script, every input a signature or a final witness or scriptSig,
+    and the modifiable flags are clear. Callers record this as
+    ``consistency-only``.
+    """
+
+    parsed = parse_psbt(psbt)
+    for index, output in enumerate(parsed.outputs):
+        if output.get(b"\x04") is None:
+            raise VerificationError(f"output {index} has an unresolved output script")
+    signed = {_TAP_KEY_SIGNATURE, _PARTIAL_SIGNATURE, 0x07, 0x08}
+    for index, item in enumerate(parsed.inputs):
+        if not signed & {entry.key_type for entry in item.entries}:
+            raise VerificationError(f"input {index} has no signature")
     _check_tx_modifiable(parsed)
 
 
@@ -576,8 +601,10 @@ def verify_bip375_completion(scenario: Scenario, psbt: bytes) -> None:
     modifiable flags. Callers record that run as ``not-evidence``.
     """
 
-    if declares_intent(scenario):
-        _verify_scenario_intent(scenario, parse_psbt(psbt))
+    if not declares_intent(scenario):
+        _verify_bip375_consistency(psbt)
+        return
+    _verify_scenario_intent(scenario, parse_psbt(psbt))
     if scenario.verification == "structural":
         _verify_bip375_structural(scenario, psbt)
         return
@@ -637,10 +664,8 @@ def verify_musig2_sp_completion(scenario: Scenario, phase: str, psbt: bytes) -> 
                 f"expected {participants}"
             )
     if phase == "round2":
-        for index, output in enumerate(scenario.outputs):
-            if output.get("type") != "silent-payment":
-                continue
-            if parsed.outputs[index].get(b"\x04") is None:
+        for index, output in enumerate(parsed.outputs):
+            if output.get(b"\x09") is not None and output.get(b"\x04") is None:
                 raise VerificationError(f"output {index} has an unresolved Silent Payment script")
         _check_tx_modifiable(parsed)
 
