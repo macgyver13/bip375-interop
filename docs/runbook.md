@@ -29,6 +29,43 @@ its current status as of the most recent artifact evidence in `artifacts/`. Comp
 
 All commands below run from the repo root with the venv active (`source .venv/bin/activate`).
 
+### Setting up a baseline
+
+Each baseline profile (`baseline/interop.yaml`, `baseline-musig2/interop.yaml`) names a
+path for every checkout, and its `interop.lock` pins each one's commit. To create and
+build those checkouts:
+
+1. **Fetch.** Use **Fetch pinned sources** in the desktop app, or:
+   ```bash
+   bip375-interop --config baseline/interop.yaml fetch --in-place
+   ```
+   Each checkout is cloned at its pinned commit into the path `interop.yaml` names. A
+   path already at that commit is skipped. A path at another commit is an error and is
+   never overwritten. The two baselines pin different `spdk` and `embit` commits, so
+   give each profile its own directory.
+2. **Set up the shell.** Jade's build needs ESP-IDF on `PATH`. On macOS, current clang
+   rejects the micropython Coldcard builds unless its warnings stay warnings, and Jade's
+   `switch_to.sh` needs GNU sed (`brew install gnu-sed`):
+   ```bash
+   source <esp-idf checkout>/export.sh
+   export CFLAGS_EXTRA=-Wno-error
+   export PATH="$(brew --prefix gnu-sed)/libexec/gnubin:$PATH"
+   ```
+   If `CARGO_TARGET_DIR` is set, the Rust builds (`spdk-cli`, silent-pay's `sp-demo`)
+   put their binaries there and the harness looks for them there, so keep it the same
+   when building and running.
+3. **Build.** This runs every checkout's build steps. `--dry-run` lists them, and names
+   (`build embit caravan`) limit it to those checkouts:
+   ```bash
+   bip375-interop --config baseline/interop.yaml build
+   ```
+4. **Check.** Run **Check setup**, then **Verify now**. A `preflight failed` error names
+   whatever is still missing or unbuilt.
+
+The `embit` step installs the profile's embit into `.venv`, which every profile shares,
+and preflight requires the imported embit to be the selected profile's checkout. After
+switching profiles, run `build embit` with the new profile's `--config`.
+
 ## Desktop app and CLI workflow
 
 The Rust desktop app is a guided front end to this CLI. Start it with

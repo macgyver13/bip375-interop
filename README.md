@@ -29,6 +29,9 @@ bip375-interop --allow-dirty doctor       # each checkout's VCS, tip and dirty s
 pytest -q
 ```
 
+To fetch and build a baseline's checkouts in one pass, follow
+[Setting up a baseline](docs/runbook.md#setting-up-a-baseline).
+
 Per-backend prerequisites (full list in [docs/runbook.md](docs/runbook.md#prerequisites)):
 
 | Checkout | Needs |

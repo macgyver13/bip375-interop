@@ -17,6 +17,7 @@ const PROFILES: [(&str, &str); 5] = [
         "baseline-musig2/interop.fetched.yaml",
     ),
 ];
+const SETUP_GUIDE: &str = "docs/runbook.md";
 const PROJECTS: [&str; 7] = [
     "harness",
     "coldcard",
@@ -83,6 +84,18 @@ impl App {
             summary: None,
             pin_changes: None,
             pin_reviewed: false,
+        }
+    }
+
+    fn setup_guide_link(&mut self, ui: &mut egui::Ui) {
+        if ui
+            .link("Setup prerequisites")
+            .on_hover_text(format!("{SETUP_GUIDE}, \"Setting up a baseline\""))
+            .clicked()
+        {
+            if let Err(error) = open_setup_guide(&self.root) {
+                self.message = format!("Could not open {SETUP_GUIDE}: {error}");
+            }
         }
     }
 
@@ -262,6 +275,20 @@ fn create_live_profile(root: &Path, source: &Path) -> Result<(), String> {
         .map_err(|error| format!("could not create {}: {error}", destination.display()))?;
     file.write_all(&contents)
         .map_err(|error| format!("could not write {}: {error}", destination.display()))
+}
+
+/// Errors that mean a checkout is missing, at the wrong commit, or not built yet.
+fn needs_setup(message: &str) -> bool {
+    ["preflight failed", "missing checkout", ", found "]
+        .iter()
+        .any(|needle| message.contains(needle))
+}
+
+fn open_setup_guide(root: &Path) -> Result<(), String> {
+    let path = root.join(SETUP_GUIDE);
+    let url = Url::from_file_path(&path)
+        .map_err(|()| format!("invalid setup guide path: {}", path.display()))?;
+    webbrowser::open(url.as_str()).map_err(|error| error.to_string())
 }
 
 fn report_url(path: &Path) -> Result<Url, String> {
@@ -453,6 +480,7 @@ impl eframe::App for App {
                 if ui.add_enabled(ready && self.profile < 2, egui::Button::new("Fetch pinned sources")).clicked() { self.start(Action::Fetch); }
                 if ui.add_enabled(ready, egui::Button::new("2. Preview cases")).clicked() { self.start(Action::Preview); }
                 if ui.add_enabled(ready, egui::Button::new("3. Verify now")).clicked() { self.start(Action::Check); }
+                self.setup_guide_link(ui);
             });
             if self.running.is_some() {
                 ui.add(egui::ProgressBar::new(if self.total == 0 { 0.0 } else { self.completed as f32 / self.total as f32 })
@@ -460,6 +488,12 @@ impl eframe::App for App {
                 ui.label(&self.progress);
             }
             ui.label(&self.message);
+            if needs_setup(&self.message) {
+                ui.horizontal(|ui| {
+                    ui.label("Missing or unbuilt checkouts:");
+                    self.setup_guide_link(ui);
+                });
+            }
             ui.separator();
             egui::ScrollArea::vertical().show(ui, |ui| {
                 if let Some(selection) = &self.selection {
@@ -588,7 +622,10 @@ fn main() -> eframe::Result {
 
 #[cfg(test)]
 mod tests {
-    use super::{check_mode, cli_path, create_live_profile, live_profile_source, report_url};
+    use super::{
+        check_mode, cli_path, create_live_profile, live_profile_source, needs_setup, report_url,
+        SETUP_GUIDE,
+    };
     use std::ffi::OsStr;
     use std::path::Path;
     use std::process::Command;
@@ -666,6 +703,16 @@ mod tests {
             &["worktree", "remove", "--force", worktree.to_str().unwrap()],
         );
         std::fs::remove_dir_all(&temp).unwrap();
+    }
+
+    #[test]
+    fn setup_link_follows_checkout_errors_and_the_guide_exists() {
+        assert!(needs_setup("Could not complete: preflight failed:\n  - caravan: x is not built"));
+        assert!(needs_setup("Could not complete: spdk: missing checkout /tmp/spdk"));
+        assert!(needs_setup("Could not complete: spdk: expected 7df4615, found f93de4d"));
+        assert!(!needs_setup("Check finished. Review coverage and findings below."));
+        let guide = Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join(SETUP_GUIDE);
+        assert!(std::fs::read_to_string(guide).unwrap().contains("### Setting up a baseline"));
     }
 
     #[test]
