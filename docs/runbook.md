@@ -99,7 +99,7 @@ bip375-interop --config baseline-musig2/interop.yaml pin
 | `bip375-jade-two-way` | bip375 | jade x2 | **Working** (same-backend) |
 | `bip375-coldcard-two-way` | bip375 | coldcard x2 | **Working** (same-backend) |
 | `bip375-three-way` | bip375 | coldcard, jade, seedsigner | Blocked at `seedsigner-c` (see below); `coldcard-a`/`jade-b` contribute cleanly |
-| `bip375-coldcard-jade-two-way-taproot-sighash-default` | bip375 | coldcard, jade | **Finding**: both devices complete; Caravan and SPDK reject SIGHASH_DEFAULT (see below) |
+| `bip375-coldcard-jade-two-way-taproot-sighash-default` | bip375 | coldcard, jade | **Working**: SIGHASH_DEFAULT on a taproot input, accepted by both devices and both validators (see below) |
 | `bip375-coldcard-jade-two-way-redundant-sign` | bip375 | coldcard, jade | **Working**: both devices return a fully signed PSBT unchanged (see below) |
 | `bip375-caravan-coldcard-jade-two-way` | bip375 | coldcard, jade | **Working** (also validated by the `caravan` validator, see below) |
 | `bip375-spdk-coldcard-jade-two-way` | bip375 | coldcard, jade | **Working** (also validated by the `spdk` validator, see below) |
@@ -249,7 +249,7 @@ even be generated: it declared a P2TR input before `build_bip375_fixture` suppor
 and a second `change` output, which the fixture builder's single-SP-output contract
 rejects -- simplified to one SP payment sized to leave a 1,000 sat fee.)
 
-### `bip375-coldcard-jade-two-way-taproot-sighash-default`: finding, the validators reject SIGHASH_DEFAULT
+### `bip375-coldcard-jade-two-way-taproot-sighash-default`: working
 
 `coldcard-a`'s input 0 is generated with `sighash: default` (see `fixtures.py`), an
 explicit PSBT_IN_SIGHASH_TYPE of 0 on a P2TR input:
@@ -259,20 +259,21 @@ bip375-interop run-generated scenarios/bip375-coldcard-jade-two-way-taproot-sigh
 ```
 
 BIP-375 0.1.4 accepts SIGHASH_DEFAULT on taproot inputs, as BIP-352 recommends, so this
-is no longer a device compliance probe. Both devices handle it: Coldcard accepts ALL or
-DEFAULT, and Jade keeps the field on the input it does not own. Jade used to drop it,
-which failed strict merge with `contribution omits input 0 sighash_type (03)`; libwally
-stored a sighash of 0 the same as "not given". Fixed by libwally's `has_sighash`
-(macgyver13/libwally-core `sp-core`, first commit) and Jade `sp-musig` 80b94ce5.
+is no longer a device compliance probe. This scenario checks Coldcard signing with
+SIGHASH_DEFAULT and Jade preserving that field on an input it does not own. It does not
+test Jade signing its own SIGHASH_DEFAULT input:
 
-The signing rounds now complete, and the case fails at the validators instead. Both
-still apply the pre-0.1.4 rule:
-
-- Caravan rejects every snapshot with `PsbtV2 input 0 uses non-SIGHASH_ALL (0) with
-  silent payments` (`packages/caravan-psbt/src/psbtv2/psbtv2.ts`).
-- SPDK's finalizer, from rust-psbt, fails with `Finalizer sighash type error`:
-  `check_partial_sigs_sighash_type` converts every input's sighash to an ECDSA type,
-  and 0 is not one, even on a taproot input.
+- Coldcard accepts ALL or DEFAULT.
+- Jade keeps the field on the input it does not own. It used to drop it, which failed
+  strict merge with `contribution omits input 0 sighash_type (03)`: libwally stored a
+  sighash of 0 the same as "not given". Fixed by libwally's `has_sighash`
+  (macgyver13/libwally-core `sp-core`, first commit) and Jade `sp-musig` 80b94ce5.
+- Caravan used to reject every snapshot with `PsbtV2 input 0 uses non-SIGHASH_ALL (0)
+  with silent payments`. Fixed in `fix/sp-sighash-default-taproot` (1293c653).
+- SPDK's finalizer, from rust-psbt, used to fail with `Finalizer sighash type error`:
+  `check_partial_sigs_sighash_type` converted every input's sighash to an ECDSA type,
+  and 0 is not one. Fixed in rust-psbt `fix/taproot-default-sighash-finalize`
+  (2a0cb75a), which spdk f93de4da and `spdk-cli` now pin.
 
 ### `bip375-coldcard-jade-two-way-redundant-sign`: working
 

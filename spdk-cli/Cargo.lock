@@ -446,7 +446,7 @@ dependencies = [
 [[package]]
 name = "psbt"
 version = "0.1.0"
-source = "git+https://github.com/macgyver13/spdk.git?rev=5c8a3823d0addf6f481f81f86cb3f58604cab5d4#5c8a3823d0addf6f481f81f86cb3f58604cab5d4"
+source = "git+https://github.com/macgyver13/spdk.git?rev=f93de4dacf911260b3c5ad152aff92f66bba3653#f93de4dacf911260b3c5ad152aff92f66bba3653"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -468,7 +468,7 @@ dependencies = [
 [[package]]
 name = "psbt-v2"
 version = "0.3.0"
-source = "git+https://gitea.bitcoin.ninja/macgyver/rust-psbt.git?rev=917cb032337f77ef2e98f80b3552f3af7d0486ca#917cb032337f77ef2e98f80b3552f3af7d0486ca"
+source = "git+https://gitea.bitcoin.ninja/macgyver/rust-psbt.git?rev=2a0cb75ae05579b4bb27cd555926d070493a8849#2a0cb75ae05579b4bb27cd555926d070493a8849"
 dependencies = [
  "bitcoin",
  "bitcoin-consensus-encoding",
@@ -675,7 +675,7 @@ checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 [[package]]
 name = "silentpayments"
 version = "0.6.0"
-source = "git+https://github.com/macgyver13/spdk.git?rev=5c8a3823d0addf6f481f81f86cb3f58604cab5d4#5c8a3823d0addf6f481f81f86cb3f58604cab5d4"
+source = "git+https://github.com/macgyver13/spdk.git?rev=f93de4dacf911260b3c5ad152aff92f66bba3653#f93de4dacf911260b3c5ad152aff92f66bba3653"
 dependencies = [
  "bech32 0.9.1",
  "bitcoin_hashes 0.13.1",

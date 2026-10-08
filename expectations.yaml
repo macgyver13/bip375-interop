@@ -8,8 +8,8 @@
 #   unclassified         outcome not yet triaged; resolve on the stable-pin baseline run
 # Seeded from the 2026-09-18 full run and docs/runbook.md. Tied to both baseline locks.
 lock_sha256:
-  baseline: sha256:7dfd0d5d4e0b7121c83ce39d3bffc2f235f42d92110c297cf6c0754dd7ab75bd
-  baseline-musig2: sha256:6007dea48c9bac057ee9827a7c6b8e3d42844c684293c2902eb33bf1e56b2841
+  baseline: sha256:45b56eea05dacb892d03526dc7e6ec2b9524ff641cd7fa4651a12dee3a6f164d
+  baseline-musig2: sha256:89a6c0b6fd563b645d6b6ad240dca1e1481a8acb43481e95ed06d0725267c551
 interop_lab_allowed_findings:
   - bundled-js-rejects-unresolved
   - libwally-rejects-unresolved
@@ -53,8 +53,8 @@ scenarios:
     reason: passes, both devices return an already fully signed SP PSBT unchanged
     reference: docs/runbook.md
   bip375-coldcard-jade-two-way-taproot-sighash-default:
-    status: finding
-    reason: both devices accept SIGHASH_DEFAULT on a taproot input (BIP-375 0.1.4), Caravan and SPDK reject it
+    status: supported
+    reason: passes with Coldcard signing a SIGHASH_DEFAULT taproot input, Jade preserving that foreign field, and both validators accepting the snapshots
     reference: docs/runbook.md
   bip375-seedsigner-coldcard-two-way:
     status: unsupported
