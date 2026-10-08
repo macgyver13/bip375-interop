@@ -75,6 +75,7 @@ class ColdcardPsbtWorker:
         if suite == "musig2-sp":
             descriptor = _required_string(request, "descriptor")
             self._enroll_descriptor(device, descriptor)
+        title = body = None
         try:
             length, digest = device.upload_file(psbt)
             packer = self._protocol_packer()
@@ -84,7 +85,9 @@ class ColdcardPsbtWorker:
             signed = self._download_signed_psbt(device, packer)
             device.send_recv(packer.sim_keypress(b"x"), timeout=None)
         except Exception as exc:
-            raise WorkerRequestError("coldcard_signing_failed", str(exc)) from exc
+            raise WorkerRequestError(
+                "coldcard_signing_failed", self._failure_message(device, exc, (title, body))
+            ) from exc
         return {
             "psbt": base64.b64encode(signed).decode("ascii"),
             "stage": "device-processed",
@@ -232,6 +235,21 @@ class ColdcardPsbtWorker:
             return "", ""
         title, _, body = raw.partition("\0")
         return title, body
+
+    @classmethod
+    def _failure_message(cls, device: Any, exc: Exception, approval: tuple) -> str:
+        """The USB error, plus the failure story when the screen shows one.
+
+        Coldcard reports only a short message over USB ("PSBT output failed");
+        the exception text and file:line behind it are on the screen.
+        """
+        try:
+            story = cls._capture_story(device)
+        except Exception:
+            return str(exc)
+        if story == approval or not story[1]:
+            return str(exc)
+        return f"{exc} (screen: {' '.join(story[1].split())})"
 
     @staticmethod
     def _download_signed_psbt(device: Any, packer: Any) -> bytes:

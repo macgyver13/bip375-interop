@@ -197,3 +197,33 @@ def test_coldcard_worker_redirects_simulator_io_to_instance_dir(tmp_path: Path) 
     finally:
         worker.close()
         socket_path.unlink(missing_ok=True)
+
+
+def test_coldcard_worker_failure_includes_the_on_screen_reason() -> None:
+    class FailingDevice(FakeDevice):
+        stories = [
+            "OK TO SEND?\0Sending 0.001 XTN",
+            "Failure\0PSBT output failed\n\nunexpected sighash\n\npsbt.py:123",
+        ]
+
+        def send_recv(self, command, **kwargs):
+            if command == ("get-signed",):
+                raise RuntimeError("Coldcard Error: PSBT output failed")
+            if isinstance(command, bytes) and b"sim_display.story" in command:
+                return self.stories.pop(0).encode()
+            return super().send_recv(command, **kwargs)
+
+    device = FailingDevice()
+    worker = ColdcardPsbtWorker(device_factory=lambda **_kwargs: device, packer=FakePacker)
+    worker._device = device
+    worker._seed_script = Path("/tmp/set_seed.py")
+
+    try:
+        worker.process(_request())
+    except Exception as exc:
+        assert str(exc) == (
+            "Coldcard Error: PSBT output failed"
+            " (screen: PSBT output failed unexpected sighash psbt.py:123)"
+        )
+    else:
+        raise AssertionError("failure was not reported")
