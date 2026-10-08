@@ -123,3 +123,23 @@ def test_fetch_needs_a_source_for_every_checkout(tmp_path: Path, capsys):
     assert main(args) == 2
 
     assert "jade: no entry" in capsys.readouterr().err
+
+
+def test_fetch_in_place_clones_into_the_configured_paths(tmp_path: Path, capsys):
+    rev = _repo(tmp_path / "upstream", {"f": "x"})
+    profile, args = _profile(tmp_path, {"embit": rev}, {"embit": f"file://{tmp_path / 'upstream'}"})
+    dest = tmp_path / "work" / "embit"
+    (profile / "interop.yaml").write_text(yaml.safe_dump({
+        "suites": ["bip375"], "checkouts": {"embit": {"path": str(dest), "revision": None}},
+    }))
+
+    assert main([*args, "--in-place"]) == 0
+
+    assert inspect_checkout(load_config(profile / "interop.yaml").checkouts["embit"]).revision == rev
+    assert not (profile / "interop.fetched.yaml").exists()
+    assert not (tmp_path / ".checkouts").exists()
+    capsys.readouterr()
+
+    _git(dest, "commit", "-q", "--allow-empty", "-m", "local")
+    assert main([*args, "--in-place"]) == 2
+    assert "another commit" in capsys.readouterr().err

@@ -76,8 +76,14 @@ def _clone(dest: Path, source: dict[str, Any], rev: str) -> bool:
     return True
 
 
-def fetch(config_path: Path, sources_path: Path, checkouts_dir: Path) -> tuple[Path, list[str]]:
-    """Clone the profile's checkouts and write a config that points at them."""
+def fetch(
+    config_path: Path, sources_path: Path, checkouts_dir: Path, in_place: bool = False
+) -> tuple[Path, list[str]]:
+    """Clone the profile's checkouts and write a config that points at them.
+
+    With ``in_place``, each is cloned at the path the profile already names, so no new
+    config is written and the profile itself is returned.
+    """
 
     config = load_config(config_path)
     sources = load_sources(sources_path)
@@ -89,10 +95,15 @@ def fetch(config_path: Path, sources_path: Path, checkouts_dir: Path) -> tuple[P
             raise FetchError(f"{name}: needs a single pinned commit in the lock, got {rev!r}")
         if name not in sources:
             raise FetchError(f"{name}: no entry in {sources_path}")
-        dest = (checkouts_dir / f"{name}@{rev[:12]}").resolve()
+        if in_place:
+            dest = checkout.path.resolve()
+        else:
+            dest = (checkouts_dir / f"{name}@{rev[:12]}").resolve()
         if _clone(dest, sources[name], rev):
             fetched.append(name)
         raw["checkouts"][name]["path"] = str(dest)
+    if in_place:
+        return config_path, fetched
     out = config_path.parent / FETCHED_NAME
     header = f"# Written by `fetch` from {config_path.name}: checkouts cloned at the lock's commits.\n"
     out.write_text(header + yaml.safe_dump(raw, sort_keys=False))

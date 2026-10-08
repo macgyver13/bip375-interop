@@ -44,11 +44,13 @@ argument. It does not bundle the Python harness or the external checkouts.
    because it is gitignored. Use **Create live profile** to copy the main checkout's
    local settings, or the example config when there is no main checkout profile;
    review the checkout paths before continuing. If a baseline names checkout paths you
-   do not have, use **Fetch pinned sources**, then select the matching **fetched
-   baseline**. The CLI equivalent is `bip375-interop --config
-   baseline-musig2/interop.yaml fetch`, followed by checks using
-   `baseline-musig2/interop.fetched.yaml`. Build the fetched checkouts as described
-   in Prerequisites before verification.
+   do not have, use **Fetch pinned sources**. It clones each checkout at its locked
+   revision into the path the profile's `interop.yaml` names, so keep the same profile
+   selected. The CLI equivalent is `bip375-interop --config
+   baseline-musig2/interop.yaml fetch --in-place`. Without `--in-place`, `fetch`
+   clones under `.checkouts/` and writes `interop.fetched.yaml`, which the **fetched
+   baseline** profiles use. Build the fetched checkouts as described in Prerequisites
+   before verification.
 2. **Check setup** calls `doctor` and lists checkout revisions and dirty state.
    **Preview cases** calls `check --dry-run` with the same validator/release selection
    as the actual run. A blocked case names its missing PSBT or unsupported suite.

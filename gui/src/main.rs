@@ -196,8 +196,7 @@ impl App {
                 self.message = "Checkout versions and cleanliness are shown below.".into();
             }
             Action::Fetch => {
-                self.message = format!("Pinned checkouts fetched. Select the fetched profile, build its prerequisites, then check setup. Config: {}",
-                    parsed.as_ref().and_then(|v| v["config"].as_str()).unwrap_or("unknown"));
+                self.message = "Pinned checkouts fetched into this profile's paths. Build their prerequisites, then check setup.".into();
             }
             Action::Preview => {
                 self.selection = parsed;
@@ -338,7 +337,7 @@ fn run_cli(
             command.arg("doctor");
         }
         Action::Fetch => {
-            command.arg("fetch");
+            command.args(["fetch", "--in-place"]);
         }
         Action::Preview => {
             command.args(["check", "--project", project, "--dry-run"]);

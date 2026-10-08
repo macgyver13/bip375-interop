@@ -7,23 +7,23 @@ allow_dirty: false
 suites: [bip375]
 checkouts:
   silent-pay:
-    path: ~/src/silent-pay
+    path: ~/work/interop/baseline/silent-pay
     revision: null
   coldcard:
-    path: ~/src/coldcard-firmware
+    path: ~/work/interop/baseline/coldcard-firmware
     revision: null
   jade:
-    path: ~/src/Jade
+    path: ~/work/interop/baseline/Jade
     revision: null
   seedsigner:
-    path: ~/src/seedsigner
+    path: ~/work/interop/baseline/seedsigner
     revision: null
   caravan:
-    path: ~/src/caravan-baseline
+    path: ~/work/interop/baseline/caravan
     revision: null
   spdk:
-    path: ~/src/spdk-baseline
+    path: ~/work/interop/baseline/spdk
     revision: null
   embit:
-    path: ~/src/embit
+    path: ~/work/interop/baseline/embit
     revision: null

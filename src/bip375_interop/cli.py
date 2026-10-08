@@ -110,6 +110,10 @@ def _parser() -> argparse.ArgumentParser:
     fetch_cmd = sub.add_parser("fetch", help="clone every checkout at its lock commit and write interop.fetched.yaml")
     fetch_cmd.add_argument("--sources", type=Path, default=Path("sources.yaml"))
     fetch_cmd.add_argument("--checkouts-dir", type=Path, default=Path(".checkouts"))
+    fetch_cmd.add_argument(
+        "--in-place", action="store_true",
+        help="clone into the paths interop.yaml names instead of --checkouts-dir",
+    )
     smoke = sub.add_parser("smoke")
     smoke.add_argument("backend", choices=("coldcard", "jade"))
     validate = sub.add_parser("validate", help="validate a scenario schema, not a PSBT")
@@ -670,7 +674,7 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps({"built": build(config, args.only)}, indent=2))
             return 0
         if args.command == "fetch":
-            out, fetched = fetch(args.config, args.sources, args.checkouts_dir)
+            out, fetched = fetch(args.config, args.sources, args.checkouts_dir, args.in_place)
             print(json.dumps({"config": str(out), "fetched": fetched}, indent=2))
             return 0
         if args.command == "smoke":

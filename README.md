@@ -60,9 +60,10 @@ reason. **Open full HTML report** opens the saved report in the default browser.
 A passing exit means the results match `expectations.yaml`, so inspect
 expected findings and blocked cases in the report too. The app needs the same local
 checkouts, builds, Python dependencies, `bitcoind`, and `bitcoin-cli` as the CLI.
-If a baseline checkout is missing, use **Fetch pinned sources**, then select the
-matching fetched profile and build its prerequisites. Fetch writes
-`baseline*/interop.fetched.yaml` and clones exact locked revisions under `.checkouts/`.
+If a baseline checkout is missing, use **Fetch pinned sources**, then build its
+prerequisites. It clones exact locked revisions into the paths the profile's
+`interop.yaml` names (`fetch --in-place`). Plain `fetch` clones under `.checkouts/`
+instead and writes `baseline*/interop.fetched.yaml` for the fetched profiles.
 
 Choose a narrower project after changing one codebase. Select the primary BIP-375
 profile for that line, or **Live development** for unpinned work. Each worktree needs
