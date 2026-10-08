@@ -99,6 +99,7 @@ bip375-interop --config baseline-musig2/interop.yaml pin
 | `bip375-jade-two-way` | bip375 | jade x2 | **Working** (same-backend) |
 | `bip375-coldcard-two-way` | bip375 | coldcard x2 | **Working** (same-backend) |
 | `bip375-three-way` | bip375 | coldcard, jade, seedsigner | Blocked at `seedsigner-c` (see below); `coldcard-a`/`jade-b` contribute cleanly |
+| `bip375-coldcard-jade-three-way` | bip375 | coldcard, jade, coldcard | **Working**: the three-way flow with a second Coldcard in place of SeedSigner (see below) |
 | `bip375-coldcard-jade-two-way-taproot-sighash-default` | bip375 | coldcard, jade | **Working**: SIGHASH_DEFAULT on a taproot input, accepted by both devices and both validators (see below) |
 | `bip375-coldcard-jade-two-way-redundant-sign` | bip375 | coldcard, jade | **Working**: both devices return a fully signed PSBT unchanged (see below) |
 | `bip375-caravan-coldcard-jade-two-way` | bip375 | coldcard, jade | **Working** (also validated by the `caravan` validator, see below) |
@@ -248,6 +249,19 @@ SeedSigner is the last signer here instead of the first. Last attempt:
 even be generated: it declared a P2TR input before `build_bip375_fixture` supported one,
 and a second `change` output, which the fixture builder's single-SP-output contract
 rejects -- simplified to one SP payment sized to leave a 1,000 sat fee.)
+
+### `bip375-coldcard-jade-three-way`: working
+
+The same three inputs and SP output as `bip375-three-way`, with a second Coldcard
+(`coldcard-c`, seed `test-c`) as the third signer, so the three-party flow is covered
+while SeedSigner cannot co-own a send:
+
+```bash
+bip375-interop run-generated scenarios/bip375-coldcard-jade-three-way.yaml
+```
+
+`coldcard-a` and `jade-b` contribute their shares, `coldcard-c` resolves the output and
+signs its input, then `coldcard-a` and `jade-b` sign theirs.
 
 ### `bip375-coldcard-jade-two-way-taproot-sighash-default`: working
 

@@ -20,6 +20,10 @@ scenarios:
     status: supported
     reason: passes, every snapshot also validated by Caravan
     reference: docs/runbook.md
+  bip375-coldcard-jade-three-way:
+    status: supported
+    reason: passes, three signers across two backends without SeedSigner
+    reference: docs/runbook.md
   bip375-coldcard-jade-two-way:
     status: supported
     reason: passes
