@@ -54,9 +54,10 @@ From the repository root, after completing Setup:
 cargo run --manifest-path gui/Cargo.toml
 ```
 
-The app defaults to the **BIP-375 + MuSig2 baseline** and **harness** (all code).
+The app defaults to the **BIP-375 baseline** and **harness** (all code).
 Use **Check setup** to inspect checkout revisions, **Preview cases** to see selection
-and missing PSBTs, then **Verify now**. This full gate applies Caravan and SPDK to
+and missing PSBTs, then **Verify now**. For the full gate, choose **BIP-375 + MuSig2
+baseline** with **harness**. It applies Caravan and SPDK to
 BIP-375/BIP-376 scenarios and runs both MuSig2-SP regtest architectures. Progress
 shows the active case and completed count; the report shows each status, label, and
 reason. **Open full HTML report** opens the saved report in the default browser.
@@ -72,7 +73,19 @@ Choose a narrower project after changing one codebase. Select the primary BIP-37
 profile for that line, or **Live development** for unpinned work. Each worktree needs
 its own gitignored `interop.yaml`. If it is missing, **Create live profile** copies
 settings from the main checkout when available, or from
-`config/interop.example.yaml`; review the paths before checking setup. **Preview pin
+`config/interop.example.yaml`; review the paths before checking setup.
+
+With **Live development**, **Compare with baseline** compares those live checkout
+paths with either baseline's lock, defaulting to **BIP-375 baseline**. It shows matching revisions, ahead/behind or
+diverged histories, uncommitted changes, missing checkouts, and codebases without a
+pin. **Review delta** shows commit history and changed files. **Check setup** also
+refreshes the comparison. **Preview affected cases** selects a single supported
+backend when only it differs, or **harness** when multiple or shared codebases differ.
+The comparison baseline does not change the run's scenarios or expectations.
+Preview and verification refresh the comparison; verification saves its snapshot
+in the JSON report. A later refresh flags differences from that tested snapshot.
+
+On an original baseline profile, **Preview pin
 changes** shows exact revision changes without writing; **Update pins** writes the
 selected profile's `interop.lock` only after review and only for clean checkouts.
 Rerun verification and review `expectations.yaml` when pins move. More detail is in
@@ -110,6 +123,14 @@ when a checkout has uncommitted work; the result is then marked non-reproducible
 `check --project X --dry-run` shows what would be selected, and which files changed in
 that checkout since `HEAD` (`--since <rev>` for another baseline), without starting any
 device.
+To compare all live checkouts with a baseline lock, including dirty checkouts:
+
+```sh
+bip375-interop --config interop.yaml compare --baseline-lock baseline-musig2/interop.lock
+```
+
+Add `--baseline-lock baseline-musig2/interop.lock` to a development `check` to
+record the comparison alongside its preview or verification results.
 Add `--progress-json` to `check` to emit one JSON event per case and MuSig2 leg on
 stderr; the final JSON summary remains on stdout. This is what the desktop app uses.
 
