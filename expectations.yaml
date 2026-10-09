@@ -50,6 +50,26 @@ scenarios:
     status: supported
     reason: passes with a P2TR key-path input
     reference: docs/runbook.md
+  bip375-btclib-single:
+    status: supported
+    reason: passes, btclib-wallet writes the global share and signs a P2WPKH input
+    reference: docs/runbook.md
+  bip375-btclib-single-taproot:
+    status: supported
+    reason: passes, btclib-wallet writes the global share and signs a P2TR input
+    reference: docs/runbook.md
+  bip375-coldcard-btclib-two-way:
+    status: supported
+    reason: passes, Coldcard contributes and btclib-wallet resolves the output and signs its P2TR input
+    reference: docs/runbook.md
+  bip375-btclib-jade-two-way:
+    status: supported
+    reason: passes, btclib-wallet contributes for its P2TR input and Jade resolves the output
+    reference: docs/runbook.md
+  bip375-coldcard-jade-btclib-three-way:
+    status: supported
+    reason: passes, Coldcard and Jade contribute and btclib-wallet resolves the output last
+    reference: docs/runbook.md
   bip375-btclib-coldcard-jade-two-way:
     status: supported
     reason: passes, final PSBT also verified by the btclib-wallet validator

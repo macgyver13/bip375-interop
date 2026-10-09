@@ -118,3 +118,52 @@ def test_real_btclib_accepts_signed_fixture_and_rejects_tampered_signature(tmp_p
     assert adapter.validate([good])[0]["ok"]
     with pytest.raises(BtclibValidationError, match="bad.psbt"):
         adapter.validate([good, bad])
+
+
+def test_btclib_worker_reports_a_missing_runtime_and_refuses_musig2():
+    from bip375_interop.signer_worker import BtclibWorker, handle_request
+
+    def missing(_name: str):
+        raise ImportError("No module named 'btclib_wallet'")
+
+    worker = BtclibWorker(missing)
+    capabilities = handle_request(worker, {"id": 1, "op": "capabilities"})["result"]
+    musig2 = handle_request(worker, {"id": 2, "op": "process_psbt", "suite": "musig2-sp"})
+
+    assert capabilities["plain_bip375"] is False and capabilities["musig2_sp"] is False
+    assert "btclib_wallet" in capabilities["unavailable_reason"]
+    assert musig2["error"] == {"code": "unsupported", "message": "the btclib signer supports plain BIP-375 only"}
+
+
+def test_btclib_worker_runs_the_harness_module_in_btclib_venv(tmp_path: Path):
+    plan = BtclibAdapter(_fake_checkout(tmp_path)).plan_worker()
+
+    assert plan.argv[0].endswith(".venv/bin/python")
+    assert plan.argv[2:] == ("-m", "bip375_interop.signer_worker", "--backend", "btclib")
+    assert Path(plan.env["PYTHONPATH"], "bip375_interop/signer_worker.py").is_file()
+
+
+@pytest.mark.skipif(
+    not os.environ.get("BTCLIB_CHECKOUT"),
+    reason="set BTCLIB_CHECKOUT to a btclib-wallet checkout built with bip375-interop build btclib",
+)
+@pytest.mark.parametrize("input_type", ["p2wpkh", "p2tr"])
+def test_real_btclib_worker_signs_a_single_owner_send_and_btclib_extracts_it(tmp_path: Path, input_type):
+    pytest.importorskip("embit")
+    from bip375_interop.fixtures import build_bip375_fixture
+    from bip375_interop.worker import WorkerClient
+
+    scenario = Scenario.from_dict({**SCENARIO, "inputs": [{**SCENARIO["inputs"][0], "type": input_type}]})
+    adapter = BtclibAdapter(os.environ["BTCLIB_CHECKOUT"])
+    plan = adapter.plan_worker()
+    worker = WorkerClient(plan.argv, cwd=plan.cwd, env=plan.env)
+    worker.start("bip375", "test-a", tmp_path / "btclib-a", "regtest")
+    try:
+        result = worker.process_psbt(build_bip375_fixture(scenario), "resolve-sign")
+    finally:
+        worker.stop()
+    final = tmp_path / "final.psbt"
+    final.write_bytes(result.psbt)
+
+    assert result.signatures_added == 1
+    assert adapter.validate([final])[0]["ok"]

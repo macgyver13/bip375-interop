@@ -178,6 +178,11 @@ bip375-interop --config baseline-musig2/interop.yaml pin
 | `bip375-caravan-coldcard-jade-two-way` | bip375 | coldcard, jade | **Working** (also validated by the `caravan` validator, see below) |
 | `bip375-spdk-coldcard-jade-two-way` | bip375 | coldcard, jade | **Working** (also validated by the `spdk` validator, see below) |
 | `bip375-btclib-coldcard-jade-two-way` | bip375 | coldcard, jade | **Working** (also validated by the `btclib` validator, see below) |
+| `bip375-btclib-single` | bip375 | btclib | **Working** (btclib-wallet as signer, see below) |
+| `bip375-btclib-single-taproot` | bip375 | btclib | **Working** (P2TR key-path input) |
+| `bip375-coldcard-btclib-two-way` | bip375 | coldcard, btclib | **Working**: btclib-wallet resolves the output |
+| `bip375-btclib-jade-two-way` | bip375 | btclib, jade | **Working**: btclib-wallet contributes, Jade resolves |
+| `bip375-coldcard-jade-btclib-three-way` | bip375 | coldcard, jade, btclib | **Working**: btclib-wallet resolves after both devices |
 | `bip375-seedsigner-jade-two-way` | bip375 | seedsigner, jade | Blocked (SeedSigner cannot co-own a plain BIP-375 send, see below) |
 | `bip375-seedsigner-coldcard-two-way` | bip375 | seedsigner, coldcard | Blocked, same root cause, confirmed against a second backend |
 | `bip376-coldcard-sp-spend-single` | bip375 (BIP-376) | coldcard | **Working** (spends its own previously-received SP UTXO) |
@@ -503,6 +508,25 @@ bip375-interop run-generated scenarios/bip375-btclib-coldcard-jade-two-way.yaml
 btclib-wallet's `.gitignore` covers) and installs btclib-wallet editable with its
 `secp256k1` extra, so it stays out of the harness's `.venv`. Its `btclib` dependency
 resolves from PyPI at or above btclib-wallet's floor.
+
+### btclib-wallet as a signer (`backend: btclib`)
+
+The same checkout also signs, plain BIP-375 sends only (no MuSig2-SP, no BIP-376 spends:
+btclib-wallet has no BIP-376 support). `signer_worker.BtclibWorker` runs in btclib's venv
+as a persistent worker like SeedSigner's. btclib's `sign` does not write ECDH shares, so
+per phase the worker does what a device does:
+
+- `contribute`: an ECDH share and DLEQ proof (`set_input_share`) for each input it owns.
+- `resolve-sign`: its own shares, or one global share (`set_global_share`) when it owns
+  every eligible input, then `set_output_scripts`, then signatures.
+- `sign`: signatures only, through btclib's `SoftwareSigner`.
+
+An input is owned when its BIP-32 origin names this seed's fingerprint and the path
+derives to the input's key. A taproot input's share uses the tweaked output key, negated
+when its point has odd y, since BIP-352 counts the x-only key. The five `btclib`
+scenarios cover a single owner (P2WPKH and P2TR), btclib resolving after Coldcard and
+after Coldcard plus Jade, and btclib contributing before Jade resolves. All pass Caravan,
+SPDK and btclib validation.
 
 ## BIP-376 (Silent Payment spend) scenarios
 

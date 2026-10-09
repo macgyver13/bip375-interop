@@ -192,6 +192,7 @@ def _start_workers(config, scenario, run_artifacts, descriptor: str | None = Non
                 "coldcard": ColdcardAdapter,
                 "bitsaga": BitSagaAdapter,
                 "bitsaga-seedsigner": BitSagaAdapter,
+                "btclib": BtclibAdapter,
             }.get(signer.backend)
             if adapter is None:
                 raise InteropError(f"backend {signer.backend} has no external PSBT worker yet")

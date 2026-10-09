@@ -1,4 +1,4 @@
-"""Adapter for btclib-wallet's PSBT roles as an independent validator.
+"""Adapter for btclib-wallet as a BIP-375 software signer and an independent validator.
 
 btclib-wallet is a pure-Python wallet library with its own PSBTv2 parser,
 Finalizer and Extractor. Its Extractor runs BIP-375's checks and recomputes
@@ -8,7 +8,8 @@ needs a fully signed PSBT and only checks ``final.psbt``.
 btclib-wallet is installed editable into a venv inside its own checkout
 (``.venv``, which its .gitignore covers), so its dependencies stay out of
 the harness's venv. ``btclib_validate.py`` (in this package) runs in that
-venv.
+venv, and so does the signer worker (``signer_worker.BtclibWorker``), which
+signs plain BIP-375 sends only.
 """
 
 from __future__ import annotations
@@ -19,7 +20,9 @@ import sys
 from pathlib import Path
 from typing import Sequence
 
-from bip375_interop.adapters.base import CommandPlan, Runner, execute_plan, require_checkout
+from bip375_interop.adapters.base import (
+    AdapterCapabilities, CommandPlan, Runner, execute_plan, require_checkout,
+)
 from bip375_interop.errors import InteropError
 
 _SCRIPT = Path(__file__).resolve().parents[1] / "btclib_validate.py"
@@ -31,6 +34,7 @@ class BtclibValidationError(InteropError):
 
 class BtclibAdapter:
     backend = "btclib"
+    capabilities = AdapterCapabilities(plain_bip375=True, musig2_sp=False)
     snapshot_glob = "final.psbt"
 
     def __init__(self, checkout_dir: str | Path, *, runner: Runner = subprocess.run) -> None:
@@ -47,6 +51,17 @@ class BtclibAdapter:
                 (str(self.python), "-m", "pip", "install", "-q", "-e", ".[secp256k1]"),
                 self.checkout_dir,
             ),
+        )
+
+    def plan_worker(self) -> CommandPlan:
+        """A persistent JSON-lines signer worker in btclib-wallet's venv."""
+
+        harness_src = Path(__file__).resolve().parents[2]
+        return CommandPlan(
+            "btclib-jsonl-worker",
+            (str(self.python), "-u", "-m", "bip375_interop.signer_worker", "--backend", "btclib"),
+            self.checkout_dir,
+            {"PYTHONPATH": str(harness_src)},
         )
 
     def plan_validate(self, psbt_paths: Sequence[Path]) -> CommandPlan:

@@ -170,6 +170,111 @@ class BitSagaWorker:
         return {"psbt": _encode_psbt(psbt), "stage": stage}
 
 
+class BtclibWorker:
+    """Sign plain BIP-375 sends with btclib-wallet's PSBT Signer role.
+
+    Runs in btclib-wallet's own venv. btclib's `sign` does not write ECDH
+    shares, so this does what a device does per phase: shares and DLEQ proofs
+    for the inputs it owns (contribute, resolve-sign), the silent payment
+    output scripts once every input is covered (resolve-sign), and signatures
+    (resolve-sign, sign). One owner of every eligible input writes the global
+    share instead, as the harness expects of a single-owner send.
+    """
+
+    backend = "btclib"
+
+    def __init__(self, loader: Loader = importlib.import_module) -> None:
+        self._loader = loader
+        self._modules: dict[str, Any] | None = None
+        self._load_error: str | None = None
+        try:
+            self._modules = {
+                name: loader(module) for name, module in (
+                    ("psbt", "btclib_wallet.psbt.psbt"),
+                    ("sp", "btclib_wallet.psbt.silent_payments"),
+                    ("bip32", "btclib_wallet.bip32.bip32"),
+                    ("bip39", "btclib_wallet.mnemonic.bip39"),
+                    ("signer", "btclib_wallet.psbt_signer"),
+                    ("taproot", "btclib.script.taproot"),
+                    ("curves", "btclib_ecc.curves"),
+                )
+            }
+        except ImportError as exc:
+            self._load_error = str(exc)
+
+    def capabilities(self) -> RuntimeCapabilities:
+        return RuntimeCapabilities(
+            backend=self.backend,
+            plain_bip375=self._modules is not None,
+            musig2_sp=False,
+            persistent=True,
+            unavailable_reason=self._load_error,
+        )
+
+    def process(self, request: Mapping[str, Any]) -> dict[str, Any]:
+        if _required_string(request, "suite") != "bip375":
+            raise WorkerRequestError("unsupported", "the btclib signer supports plain BIP-375 only")
+        if self._modules is None:
+            raise WorkerRequestError("unsupported", self._load_error or "btclib-wallet is unavailable")
+        m = self._modules
+        phase = _required_string(request, "phase")
+        psbt = _parse_psbt(request, m["psbt"].Psbt)
+        try:
+            root = m["bip39"].mxprv_from_mnemonic(_required_string(request, "mnemonic"))
+        except Exception as exc:
+            raise WorkerRequestError("invalid_signer", f"failed to derive signer seed: {exc}") from exc
+        keys = self._owned_keys(psbt, root)
+        if any(output.sp_v0_info for output in psbt.outputs) and phase in {"contribute", "resolve-sign"}:
+            eligible = m["sp"].eligible_pub_keys(psbt)
+            if phase == "resolve-sign" and eligible and eligible.keys() <= keys.keys():
+                m["sp"].set_global_share(psbt, [keys[vin] for vin in eligible])
+            else:
+                for vin in eligible.keys() & keys.keys():
+                    m["sp"].set_input_share(psbt, vin, keys[vin])
+            if phase == "resolve-sign":
+                m["sp"].set_output_scripts(psbt)
+        signed: list[int] = []
+        if phase != "contribute":
+            # The harness's fixtures carry witness UTXOs only.
+            psbt, signed = m["psbt"].sign(
+                psbt, m["signer"].SoftwareSigner(root), require_non_witness_utxo=False
+            )
+        return {
+            "psbt": base64.b64encode(psbt.serialize()).decode("ascii"),
+            "signatures_added": len(signed),
+            "stage": "shares" if phase == "contribute" else "signed",
+        }
+
+    def _owned_keys(self, psbt: Any, root: str) -> dict[int, int]:
+        """Private key of each input this seed owns: the tweaked output key for taproot."""
+
+        m = self._modules
+        bip32 = m["bip32"]
+        mine = bip32.fingerprint(root)
+        keys = {}
+        for vin, psbt_in in enumerate(psbt.inputs):
+            origins = [(pub, origin) for pub, origin in psbt_in.hd_key_paths.items()]
+            origins += [(pub, origin) for pub, (_, origin) in psbt_in.taproot_hd_key_paths.items()]
+            for pub, origin in origins:
+                if origin.master_fingerprint != mine:
+                    continue
+                xprv = bip32.derive(root, origin.der_path)
+                prv = bip32.prv_keyinfo_from_xprv(xprv)[0]
+                xpub = bip32.BIP32KeyData.b58decode(bip32.xpub_from_xprv(xprv)).key
+                if pub == xpub:
+                    keys[vin] = prv
+                elif pub == xpub[1:] and pub == psbt_in.taproot_internal_key:
+                    tweaked = m["taproot"].output_prvkey_from_merkle_root(
+                        prv, psbt_in.taproot_merkle_root or b""
+                    )
+                    # BIP-352 counts the x-only output key, so the even-y one.
+                    curves = m["curves"]
+                    if curves.mult(tweaked)[1] % 2:
+                        tweaked = curves.secp256k1.n - tweaked
+                    keys[vin] = tweaked
+        return keys
+
+
 def _required_string(request: Mapping[str, Any], name: str) -> str:
     value = request.get(name)
     if not isinstance(value, str) or not value:
@@ -249,13 +354,13 @@ def serve(worker: Any, input_stream: TextIO, output_stream: TextIO) -> None:
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="bip375-signer-worker")
-    parser.add_argument("--backend", choices=("seedsigner", "bitsaga"), required=True)
+    parser.add_argument("--backend", choices=("seedsigner", "bitsaga", "btclib"), required=True)
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
-    worker = SeedSignerWorker() if args.backend == "seedsigner" else BitSagaWorker()
+    worker = {"seedsigner": SeedSignerWorker, "bitsaga": BitSagaWorker, "btclib": BtclibWorker}[args.backend]()
     serve(worker, sys.stdin, sys.stdout)
     return 0
 
