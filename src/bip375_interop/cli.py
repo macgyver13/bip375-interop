@@ -12,6 +12,7 @@ from . import __version__
 from .build import build, plan_builds
 from .fetch import fetch
 from .checkouts import inspect_checkout
+from .comparison import compare_checkouts
 from .expectations import (
     interop_lab_allowed_findings, load_expectations, require_lock_digest,
 )
@@ -102,6 +103,8 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--allow-dirty", action="store_true")
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("doctor")
+    compare = sub.add_parser("compare", help="compare live checkouts with a baseline lock")
+    compare.add_argument("--baseline-lock", type=Path, required=True)
     pin_cmd = sub.add_parser("pin", help="write interop.lock with the current commit id of every checkout")
     pin_cmd.add_argument("--dry-run", action="store_true", help="show pin changes without writing the lock")
     build_cmd = sub.add_parser("build", help="run each checkout's build steps (plan_build)")
@@ -152,6 +155,7 @@ def _parser() -> argparse.ArgumentParser:
         help="bind a prepared initial PSBT to a MuSig2-SP scenario; may be repeated",
     )
     check.add_argument("--dry-run", action="store_true", help="show the selection without starting workers")
+    check.add_argument("--baseline-lock", type=Path, help="record a live checkout comparison before testing")
     check.add_argument("--progress-json", action="store_true", help="emit JSON progress events on stderr")
     treasury = sub.add_parser("treasury-wallet")
     treasury.add_argument("seed_ids", nargs="+", help="published test seed ids, e.g. test-a test-b test-c")
@@ -642,6 +646,9 @@ def main(argv: list[str] | None = None) -> int:
         config = load_config(args.config)
         if args.allow_dirty:
             config = replace(config, allow_dirty=True)
+        if args.command == "compare":
+            print(json.dumps(compare_checkouts(config, args.baseline_lock), indent=2))
+            return 0
         if args.command == "validate-psbt":
             expectations_path = args.config.parent / "expectations.yaml"
             allowed = interop_lab_allowed_findings(expectations_path) if expectations_path.is_file() else set()
@@ -699,6 +706,12 @@ def main(argv: list[str] | None = None) -> int:
                 if args.progress_json:
                     print(json.dumps({"stage": stage, **fields}), file=sys.stderr, flush=True)
 
+            baseline_fields = {}
+            if args.baseline_lock is not None:
+                comparison = compare_checkouts(config, args.baseline_lock)
+                baseline_fields["baseline_comparison"] = comparison
+                progress("baseline-comparison", comparison=comparison)
+
             entries = select(discover(args.scenarios_dir), args.project, config.suites)
             if args.exhaustive or args.release:
                 entries = attach_bip375_validators(entries)
@@ -719,6 +732,7 @@ def main(argv: list[str] | None = None) -> int:
             changes = changed_files(source_root, args.since)
             if args.dry_run:
                 print(json.dumps({
+                    **baseline_fields,
                     "project": args.project,
                     "since": args.since,
                     "changed_files": list(changes),
@@ -798,7 +812,11 @@ def main(argv: list[str] | None = None) -> int:
             lab_reports = write_reports(batch.path, batch.results) if args.release else None
             manifest, report = batch.finalize(labels, checkout_states, lab_reports)
             payload = json.loads(manifest.read_text())
+            if baseline_fields:
+                payload.update(baseline_fields)
+                manifest.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
             summary = {
+                **baseline_fields,
                 "counts": payload["counts"],
                 "passed": payload["counts"]["passed"],
                 "required": payload["required"],

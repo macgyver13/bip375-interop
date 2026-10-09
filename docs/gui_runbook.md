@@ -3,6 +3,9 @@ flowchart TD
     A["Choose a profile and Changed code"] --> B{"What do you want to check?"}
     B -->|"Full gate"| C["BIP-375 + MuSig2 baseline<br/>Changed code: harness"]
     B -->|"One codebase"| D["Choose its baseline<br/>Select the changed codebase"]
+    B -->|"Development deltas"| O["Live development<br/>Compare with baseline"]
+    O --> P["Review commit and file deltas<br/>Preview affected cases"]
+    P --> E
     C --> E["1. Check setup"]
     D --> E
     E --> F{"Missing checkout?"}
@@ -14,6 +17,6 @@ flowchart TD
     J -->|"preflight failed"| H
     J --> K["Read the report<br/>Coverage → issues → reasons"]
     K --> L{"Updating accepted code revisions?"}
-    L -->|Yes| M["Stay on the same baseline<br/>Preview pin changes → Update pins"]
+    L -->|Yes| M["Put accepted commits in baseline checkouts<br/>Select original baseline<br/>Preview pin changes → Update pins"]
     M --> N["Verify again and review expectations.yaml"]
 ```

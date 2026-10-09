@@ -74,8 +74,8 @@ The Rust desktop app is a guided front end to this CLI. Start it with
 repository root. A compiled binary also accepts the repository path as its first
 argument. It does not bundle the Python harness or the external checkouts.
 
-1. Select a profile. **BIP-375 + MuSig2 baseline** is the default full gate;
-   **BIP-375 baseline** covers that pinned line; **Live development** uses the root
+1. Select a profile. **BIP-375 baseline** is the default and covers that pinned line;
+   **BIP-375 + MuSig2 baseline** runs the full gate; **Live development** uses the root
    `interop.yaml`. Select **harness** to check all selected scenarios, or one changed
    backend for a narrower regression group. A new worktree has no `interop.yaml`
    because it is gitignored. Use **Create live profile** to copy the main checkout's
@@ -88,9 +88,25 @@ argument. It does not bundle the Python harness or the external checkouts.
    clones under `.checkouts/` and writes `interop.fetched.yaml`, which the **fetched
    baseline** profiles use. Build the fetched checkouts as described in Prerequisites
    before verification.
-2. **Check setup** calls `doctor` and lists checkout revisions and dirty state.
+2. With **Live development**, **Compare with** defaults to **BIP-375 baseline**.
+   Choose the baseline and use **Compare with
+   baseline** to compare the live checkout paths with the selected baseline's
+   `interop.lock`. Baseline checkout directories need not exist for this comparison.
+   The table separates revision differences from uncommitted changes and reports
+   missing checkouts or missing pins individually. **Review delta** shows local
+   commit history, committed file differences, and staged/unstaged/untracked files.
+   History is limited to the latest 50 live-only commits. If the pinned commit is
+   unavailable locally, the revision difference remains visible with an explanation;
+   comparison does not fetch sources.
+   **Preview affected cases** selects the one differing supported backend, or
+   **harness** for multiple differences or a codebase without a dedicated selector.
+   Comparing works with dirty checkouts even when **Include uncommitted checkout
+   changes** is off; enable that option to verify dirty checkouts.
+   The comparison baseline only controls the audit. It does not select a different
+   run profile, scenario suite, expectation file, or release gate.
+   **Check setup** refreshes the comparison, then calls `doctor` and lists checkout revisions and dirty state.
    **Preview cases** calls `check --dry-run` with the same validator/release selection
-   as the actual run. A blocked case names its missing PSBT or unsupported suite.
+   as the actual run and refreshes the live comparison. A blocked case names its missing PSBT or unsupported suite.
 3. **Verify now** runs the check in the background. With **BIP-375 + MuSig2 baseline**
    (or its fetched profile) and **harness**, it starts the full `check --release` gate,
    including the Interop Lab stage and both MuSig2 regtest legs. The progress bar counts cases;
@@ -99,7 +115,14 @@ argument. It does not bundle the Python harness or the external checkouts.
    saved report in the default browser; its path remains visible for archival review.
    A `completed` MuSig2 signing round is not end-to-end proof;
    only a regtest leg that prints `PASS` is counted as such.
-4. After changing a tested checkout, use **Preview pin changes** to compare its
+   Development verification records the selected baseline lock and live checkout
+   comparison in its JSON manifest and refreshes the table. Refreshing after further
+   edits flags differences from the snapshot recorded for that verification; the
+   report retains the original snapshot. Use **Compare with baseline** or **Check
+   setup** to refresh after editing sources or moving the baseline lock.
+4. To accept development changes into a baseline, first review and verify them,
+   then put the accepted commits in the baseline profile's checkout paths.
+   Select that original baseline profile and use **Preview pin changes** to compare its
    clean current revision with the profile's lock. **Update pins** then writes that
    lock. Rerun the full check and review `expectations.yaml`; commit the lock and
    expectation changes together. `pin` refuses dirty checkouts.
@@ -119,6 +142,15 @@ the single final JSON summary. Exit 2 means setup/preflight stopped execution,
 exit 1 means a failing label, no verified case, or a failed release leg, and exit 0
 means the current expectations were met. Exit 0 can still include known findings
 or blocked scenarios, so inspect the report's coverage and reasons.
+
+The CLI equivalents for live comparison and a preview with a comparison snapshot are:
+
+```sh
+bip375-interop --config interop.yaml compare --baseline-lock baseline-musig2/interop.lock
+bip375-interop --config interop.yaml --allow-dirty check --project harness --exhaustive --baseline-lock baseline-musig2/interop.lock --dry-run
+```
+
+Remove `--dry-run` to verify and save the comparison in the batch's JSON manifest.
 
 For a baseline change, preview before writing:
 
