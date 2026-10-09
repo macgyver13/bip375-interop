@@ -1,0 +1,13 @@
+name: bip375-coldcard-jade-two-way-taproot-sighash-default
+suite: bip375
+network: regtest
+signers:
+  - {name: coldcard-a, backend: coldcard, seed_id: test-a}
+  - {name: jade-b, backend: jade, seed_id: test-b}
+suite_config:
+  contribution_mode: per-input
+inputs:
+  - {owner: coldcard-a, type: p2tr, amount_sat: 100000, sighash: default}
+  - {owner: jade-b, type: p2tr, amount_sat: 110000}
+outputs:
+  - {type: silent-payment, recipient_id: recipient-a, amount_sat: 209000}

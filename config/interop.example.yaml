@@ -1,0 +1,24 @@
+artifact_root: artifacts
+allow_dirty: false
+checkouts:
+  silent-pay:
+    path: ~/src/silent-pay
+    revision: null
+  coldcard:
+    path: ~/src/coldcard-firmware
+    revision: null
+  jade:
+    path: ~/src/Jade
+    revision: null
+  seedsigner:
+    path: ~/src/seedsigner
+    revision: null
+  caravan:
+    path: ~/src/caravan
+    revision: null
+  spdk:
+    path: ~/src/spdk
+    revision: null
+  embit:
+    path: ~/src/embit
+    revision: null

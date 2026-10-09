@@ -1,0 +1,11 @@
+name: bip376-coldcard-sp-spend-single
+suite: bip375
+network: regtest
+signers:
+  - {name: coldcard-a, backend: coldcard, seed_id: test-a}
+suite_config:
+  contribution_mode: global
+inputs:
+  - {owner: coldcard-a, type: sp-spend, amount_sat: 100000}
+outputs:
+  - {type: p2wpkh, amount_sat: 99000}

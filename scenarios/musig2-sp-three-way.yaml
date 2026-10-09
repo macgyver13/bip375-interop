@@ -1,0 +1,17 @@
+name: musig2-sp-three-way
+suite: musig2-sp
+network: regtest
+signers:
+  - {name: coldcard-a, backend: coldcard, seed_id: test-a}
+  - {name: jade-b, backend: jade, seed_id: test-b}
+  - {name: bitsaga-c, backend: bitsaga-seedsigner, seed_id: test-c}
+suite_config:
+  key_architecture: aggregate-then-derive
+  threshold: 3
+  receive_index: 0
+  change_index: 0
+inputs:
+  - {owner: treasury, type: p2tr-musig2, amount_sat: 330000}
+outputs:
+  - {type: silent-payment, recipient_id: recipient-a, amount_sat: 300000}
+  - {type: change, owner: treasury, branch: 1, amount_sat: 29000}

@@ -1,0 +1,658 @@
+{
+  "schema": "psbt-lab.suite/0.2",
+  "fixtures": [],
+  "parserFixtures": [
+    {
+      "id": "snap-00-initial",
+      "psbt": "cHNidP8BAgQCAAAAAQQBAgEFAQEBBgEDAfsEAgAAAAABAR+ghgEAAAAAABYAFNDEo+8J6Ze26Z45flGP4+QaEYyhAQMEAQAAACIGAuerJTe11J6XAwmq4G6eSfNs4cn+u9ROyODRzKC0+cMZGHPF2gpUAACAAQAAgAAAAIAAAAAAAAAAAAEOIAEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ8EAAAAAAEQBP7///8AAQEfsK0BAAAAAAAWABRonn8gZRru0T+coHNpcx7ren00tAEDBAEAAAAiBgOGQn+DyhX/hPlHVC4gXWuD9byRbTK0Bxo/6/IttcgDjhi4aI3xVAAAgAEAAIAAAACAAAAAAAEAAAABDiACAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgEPBAEAAAABEAT+////AAEDCGgwAwAAAAAAAQlCAnpIf8Gft2mHe4dC1uoYEY88TnKx6oxt5gKnrUpB2+BoA2HhseneXkLLIAf3ylS54NV+0Tk4+tVtPxnldROo/OA5AA==",
+      "sha256": "sha256:b4edd1dd43d143e204ec99c1aabf05050a25f46402b25eb2164d443649688265"
+    },
+    {
+      "id": "snap-01-contribute-coldcard-a-merged",
+      "psbt": "cHNidP8BAgQCAAAAAQQBAgEFAQEBBgEDAfsEAgAAAAABAR+ghgEAAAAAABYAFNDEo+8J6Ze26Z45flGP4+QaEYyhAQMEAQAAACIGAuerJTe11J6XAwmq4G6eSfNs4cn+u9ROyODRzKC0+cMZGHPF2gpUAACAAQAAgAAAAIAAAAAAAAAAAAEOIAEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ8EAAAAAAEQBP7///8iHQJ6SH/Bn7dph3uHQtbqGBGPPE5yseqMbeYCp61KQdvgaCEDKVLKjyjqDfttutSeON8ak0N6G6QetzsfrGSTByQ3YQYiHgJ6SH/Bn7dph3uHQtbqGBGPPE5yseqMbeYCp61KQdvgaEDUVd4FS76ni9l25ICfQYG0CRIE+FSsM7P5vO/blnxooCXS5bHUqe54Plo3Kk9WBANqQvEyJdQEPffR9fiABhj7AAEBH7CtAQAAAAAAFgAUaJ5/IGUa7tE/nKBzaXMe63p9NLQBAwQBAAAAIgYDhkJ/g8oV/4T5R1QuIF1rg/W8kW0ytAcaP+vyLbXIA44YuGiN8VQAAIABAACAAAAAgAAAAAABAAAAAQ4gAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIBDwQBAAAAARAE/v///wABAwhoMAMAAAAAAAEJQgJ6SH/Bn7dph3uHQtbqGBGPPE5yseqMbeYCp61KQdvgaANh4bHp3l5CyyAH98pUueDVftE5OPrVbT8Z5XUTqPzgOQA=",
+      "sha256": "sha256:44ca9ee70e77b227db2dbabbe3effa1ae804de1bade8d0f6d14bae58769b6f5d"
+    },
+    {
+      "id": "snap-01-contribute-coldcard-a-returned",
+      "psbt": "cHNidP8BAgQCAAAAAQQBAgEFAQEBBgEDAfsEAgAAAAABAR+ghgEAAAAAABYAFNDEo+8J6Ze26Z45flGP4+QaEYyhAQMEAQAAACIGAuerJTe11J6XAwmq4G6eSfNs4cn+u9ROyODRzKC0+cMZGHPF2gpUAACAAQAAgAAAAIAAAAAAAAAAAAEOIAEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ8EAAAAAAEQBP7///8iHQJ6SH/Bn7dph3uHQtbqGBGPPE5yseqMbeYCp61KQdvgaCEDKVLKjyjqDfttutSeON8ak0N6G6QetzsfrGSTByQ3YQYiHgJ6SH/Bn7dph3uHQtbqGBGPPE5yseqMbeYCp61KQdvgaEDUVd4FS76ni9l25ICfQYG0CRIE+FSsM7P5vO/blnxooCXS5bHUqe54Plo3Kk9WBANqQvEyJdQEPffR9fiABhj7AAEBH7CtAQAAAAAAFgAUaJ5/IGUa7tE/nKBzaXMe63p9NLQBAwQBAAAAIgYDhkJ/g8oV/4T5R1QuIF1rg/W8kW0ytAcaP+vyLbXIA44YuGiN8VQAAIABAACAAAAAgAAAAAABAAAAAQ4gAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIBDwQBAAAAARAE/v///wABAwhoMAMAAAAAAAEJQgJ6SH/Bn7dph3uHQtbqGBGPPE5yseqMbeYCp61KQdvgaANh4bHp3l5CyyAH98pUueDVftE5OPrVbT8Z5XUTqPzgOQA=",
+      "sha256": "sha256:44ca9ee70e77b227db2dbabbe3effa1ae804de1bade8d0f6d14bae58769b6f5d"
+    },
+    {
+      "id": "snap-02-resolve-sign-jade-b-merged",
+      "psbt": "cHNidP8BAgQCAAAAAQQBAgEFAQEBBgEAAfsEAgAAAAABAR+ghgEAAAAAABYAFNDEo+8J6Ze26Z45flGP4+QaEYyhAQMEAQAAACIGAuerJTe11J6XAwmq4G6eSfNs4cn+u9ROyODRzKC0+cMZGHPF2gpUAACAAQAAgAAAAIAAAAAAAAAAAAEOIAEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ8EAAAAAAEQBP7///8iHQJ6SH/Bn7dph3uHQtbqGBGPPE5yseqMbeYCp61KQdvgaCEDKVLKjyjqDfttutSeON8ak0N6G6QetzsfrGSTByQ3YQYiHgJ6SH/Bn7dph3uHQtbqGBGPPE5yseqMbeYCp61KQdvgaEDUVd4FS76ni9l25ICfQYG0CRIE+FSsM7P5vO/blnxooCXS5bHUqe54Plo3Kk9WBANqQvEyJdQEPffR9fiABhj7AAEBH7CtAQAAAAAAFgAUaJ5/IGUa7tE/nKBzaXMe63p9NLQBAwQBAAAAIgYDhkJ/g8oV/4T5R1QuIF1rg/W8kW0ytAcaP+vyLbXIA44YuGiN8VQAAIABAACAAAAAgAAAAAABAAAAAQ4gAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIBDwQBAAAAARAE/v///yICA4ZCf4PKFf+E+UdULiBda4P1vJFtMrQHGj/r8i21yAOORzBEAiB/7NHD9p3XTYpjTCUTRZW5WNBD8bIS9zk6iE9BsfJjrgIgBY/XDzRzZ4AzRgw7xswdaAm77bJcZzFx5FBqt2/iiB0BIh0Cekh/wZ+3aYd7h0LW6hgRjzxOcrHqjG3mAqetSkHb4GghA8FBwXCctR9JSa9R+PujZ3Wjdlqoq1WqnOglUiFjvrb4Ih4Cekh/wZ+3aYd7h0LW6hgRjzxOcrHqjG3mAqetSkHb4GhAVxYwcp1rRRdQNsTDZsBLiV9TZK3Fpn0M2b/WqTmjhW1RatmvSDwJjMTy2Ulvw+aS0SdUtE3R3P6WMM1WeCw+xQABAwhoMAMAAAAAAAEJQgJ6SH/Bn7dph3uHQtbqGBGPPE5yseqMbeYCp61KQdvgaANh4bHp3l5CyyAH98pUueDVftE5OPrVbT8Z5XUTqPzgOQEEIlEgGeZG2uNqxSbFjJox5qf9o4ooisvWyUuLIL11p/2AfF0A",
+      "sha256": "sha256:f9e25a21423f4ceb5d773a6ede7ef8be04ca7d57a6912dc2183d0a1050ec0187"
+    },
+    {
+      "id": "snap-02-resolve-sign-jade-b-returned",
+      "psbt": "cHNidP8BAgQCAAAAAQQBAgEFAQEBBgEAAfsEAgAAAAABAR+ghgEAAAAAABYAFNDEo+8J6Ze26Z45flGP4+QaEYyhAQMEAQAAACIGAuerJTe11J6XAwmq4G6eSfNs4cn+u9ROyODRzKC0+cMZGHPF2gpUAACAAQAAgAAAAIAAAAAAAAAAAAEOIAEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ8EAAAAAAEQBP7///8iHQJ6SH/Bn7dph3uHQtbqGBGPPE5yseqMbeYCp61KQdvgaCEDKVLKjyjqDfttutSeON8ak0N6G6QetzsfrGSTByQ3YQYiHgJ6SH/Bn7dph3uHQtbqGBGPPE5yseqMbeYCp61KQdvgaEDUVd4FS76ni9l25ICfQYG0CRIE+FSsM7P5vO/blnxooCXS5bHUqe54Plo3Kk9WBANqQvEyJdQEPffR9fiABhj7AAEBH7CtAQAAAAAAFgAUaJ5/IGUa7tE/nKBzaXMe63p9NLQiAgOGQn+DyhX/hPlHVC4gXWuD9byRbTK0Bxo/6/IttcgDjkcwRAIgf+zRw/ad102KY0wlE0WVuVjQQ/GyEvc5OohPQbHyY64CIAWP1w80c2eAM0YMO8bMHWgJu+2yXGcxceRQardv4ogdAQEDBAEAAAAiBgOGQn+DyhX/hPlHVC4gXWuD9byRbTK0Bxo/6/IttcgDjhi4aI3xVAAAgAEAAIAAAACAAAAAAAEAAAABDiACAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgEPBAEAAAABEAT+////Ih0Cekh/wZ+3aYd7h0LW6hgRjzxOcrHqjG3mAqetSkHb4GghA8FBwXCctR9JSa9R+PujZ3Wjdlqoq1WqnOglUiFjvrb4Ih4Cekh/wZ+3aYd7h0LW6hgRjzxOcrHqjG3mAqetSkHb4GhAVxYwcp1rRRdQNsTDZsBLiV9TZK3Fpn0M2b/WqTmjhW1RatmvSDwJjMTy2Ulvw+aS0SdUtE3R3P6WMM1WeCw+xQABAwhoMAMAAAAAAAEEIlEgGeZG2uNqxSbFjJox5qf9o4ooisvWyUuLIL11p/2AfF0BCUICekh/wZ+3aYd7h0LW6hgRjzxOcrHqjG3mAqetSkHb4GgDYeGx6d5eQssgB/fKVLng1X7ROTj61W0/GeV1E6j84DkA",
+      "sha256": "sha256:7dad593f2eec959b6809e511b2a2c5972f0c0eff8b0bc3c529859c80b69d389c"
+    },
+    {
+      "id": "snap-03-sign-coldcard-a-merged",
+      "psbt": "cHNidP8BAgQCAAAAAQQBAgEFAQEBBgEAAfsEAgAAAAABAR+ghgEAAAAAABYAFNDEo+8J6Ze26Z45flGP4+QaEYyhAQMEAQAAACIGAuerJTe11J6XAwmq4G6eSfNs4cn+u9ROyODRzKC0+cMZGHPF2gpUAACAAQAAgAAAAIAAAAAAAAAAAAEOIAEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ8EAAAAAAEQBP7///8iHQJ6SH/Bn7dph3uHQtbqGBGPPE5yseqMbeYCp61KQdvgaCEDKVLKjyjqDfttutSeON8ak0N6G6QetzsfrGSTByQ3YQYiHgJ6SH/Bn7dph3uHQtbqGBGPPE5yseqMbeYCp61KQdvgaEDUVd4FS76ni9l25ICfQYG0CRIE+FSsM7P5vO/blnxooCXS5bHUqe54Plo3Kk9WBANqQvEyJdQEPffR9fiABhj7IgIC56slN7XUnpcDCargbp5J82zhyf671E7I4NHMoLT5wxlHMEQCICZMIXO+83VQZlmyU7KpGZVQ/iBLb7cPS4KxQIhGTvzTAiBoMizB2eSHDZcCIQWSrnv1axE9Q+p/C5CHWDGJ78RD7QEAAQEfsK0BAAAAAAAWABRonn8gZRru0T+coHNpcx7ren00tAEDBAEAAAAiBgOGQn+DyhX/hPlHVC4gXWuD9byRbTK0Bxo/6/IttcgDjhi4aI3xVAAAgAEAAIAAAACAAAAAAAEAAAABDiACAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgEPBAEAAAABEAT+////IgIDhkJ/g8oV/4T5R1QuIF1rg/W8kW0ytAcaP+vyLbXIA45HMEQCIH/s0cP2nddNimNMJRNFlblY0EPxshL3OTqIT0Gx8mOuAiAFj9cPNHNngDNGDDvGzB1oCbvtslxnMXHkUGq3b+KIHQEiHQJ6SH/Bn7dph3uHQtbqGBGPPE5yseqMbeYCp61KQdvgaCEDwUHBcJy1H0lJr1H4+6NndaN2WqirVaqc6CVSIWO+tvgiHgJ6SH/Bn7dph3uHQtbqGBGPPE5yseqMbeYCp61KQdvgaEBXFjBynWtFF1A2xMNmwEuJX1NkrcWmfQzZv9apOaOFbVFq2a9IPAmMxPLZSW/D5pLRJ1S0TdHc/pYwzVZ4LD7FAAEDCGgwAwAAAAAAAQlCAnpIf8Gft2mHe4dC1uoYEY88TnKx6oxt5gKnrUpB2+BoA2HhseneXkLLIAf3ylS54NV+0Tk4+tVtPxnldROo/OA5AQQiUSAZ5kba42rFJsWMmjHmp/2jiiiKy9bJS4sgvXWn/YB8XQA=",
+      "sha256": "sha256:cef9fb78030dc18dd980bff12f173701ec9fcd0084c202f1ea656f0fff0acf31"
+    },
+    {
+      "id": "snap-03-sign-coldcard-a-returned",
+      "psbt": "cHNidP8BAgQCAAAAAQQBAgEFAQEBBgEAAfsEAgAAAAABAR+ghgEAAAAAABYAFNDEo+8J6Ze26Z45flGP4+QaEYyhIgIC56slN7XUnpcDCargbp5J82zhyf671E7I4NHMoLT5wxlHMEQCICZMIXO+83VQZlmyU7KpGZVQ/iBLb7cPS4KxQIhGTvzTAiBoMizB2eSHDZcCIQWSrnv1axE9Q+p/C5CHWDGJ78RD7QEBAwQBAAAAIgYC56slN7XUnpcDCargbp5J82zhyf671E7I4NHMoLT5wxkYc8XaClQAAIABAACAAAAAgAAAAAAAAAAAAQ4gAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBDwQAAAAAARAE/v///yIdAnpIf8Gft2mHe4dC1uoYEY88TnKx6oxt5gKnrUpB2+BoIQMpUsqPKOoN+2261J443xqTQ3obpB63Ox+sZJMHJDdhBiIeAnpIf8Gft2mHe4dC1uoYEY88TnKx6oxt5gKnrUpB2+BoQNRV3gVLvqeL2XbkgJ9BgbQJEgT4VKwzs/m879uWfGigJdLlsdSp7ng+WjcqT1YEA2pC8TIl1AQ999H1+IAGGPsAAQEfsK0BAAAAAAAWABRonn8gZRru0T+coHNpcx7ren00tCICA4ZCf4PKFf+E+UdULiBda4P1vJFtMrQHGj/r8i21yAOORzBEAiB/7NHD9p3XTYpjTCUTRZW5WNBD8bIS9zk6iE9BsfJjrgIgBY/XDzRzZ4AzRgw7xswdaAm77bJcZzFx5FBqt2/iiB0BAQMEAQAAACIGA4ZCf4PKFf+E+UdULiBda4P1vJFtMrQHGj/r8i21yAOOGLhojfFUAACAAQAAgAAAAIAAAAAAAQAAAAEOIAICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAQ8EAQAAAAEQBP7///8iHQJ6SH/Bn7dph3uHQtbqGBGPPE5yseqMbeYCp61KQdvgaCEDwUHBcJy1H0lJr1H4+6NndaN2WqirVaqc6CVSIWO+tvgiHgJ6SH/Bn7dph3uHQtbqGBGPPE5yseqMbeYCp61KQdvgaEBXFjBynWtFF1A2xMNmwEuJX1NkrcWmfQzZv9apOaOFbVFq2a9IPAmMxPLZSW/D5pLRJ1S0TdHc/pYwzVZ4LD7FAAEEIlEgGeZG2uNqxSbFjJox5qf9o4ooisvWyUuLIL11p/2AfF0BAwhoMAMAAAAAAAEJQgJ6SH/Bn7dph3uHQtbqGBGPPE5yseqMbeYCp61KQdvgaANh4bHp3l5CyyAH98pUueDVftE5OPrVbT8Z5XUTqPzgOQA=",
+      "sha256": "sha256:2f6253f89bc9447ae40041134252a9519928a1942bf60f429885399e49b9d77e"
+    },
+    {
+      "id": "snap-final",
+      "psbt": "cHNidP8BAgQCAAAAAQQBAgEFAQEBBgEAAfsEAgAAAAABAR+ghgEAAAAAABYAFNDEo+8J6Ze26Z45flGP4+QaEYyhAQMEAQAAACIGAuerJTe11J6XAwmq4G6eSfNs4cn+u9ROyODRzKC0+cMZGHPF2gpUAACAAQAAgAAAAIAAAAAAAAAAAAEOIAEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ8EAAAAAAEQBP7///8iHQJ6SH/Bn7dph3uHQtbqGBGPPE5yseqMbeYCp61KQdvgaCEDKVLKjyjqDfttutSeON8ak0N6G6QetzsfrGSTByQ3YQYiHgJ6SH/Bn7dph3uHQtbqGBGPPE5yseqMbeYCp61KQdvgaEDUVd4FS76ni9l25ICfQYG0CRIE+FSsM7P5vO/blnxooCXS5bHUqe54Plo3Kk9WBANqQvEyJdQEPffR9fiABhj7IgIC56slN7XUnpcDCargbp5J82zhyf671E7I4NHMoLT5wxlHMEQCICZMIXO+83VQZlmyU7KpGZVQ/iBLb7cPS4KxQIhGTvzTAiBoMizB2eSHDZcCIQWSrnv1axE9Q+p/C5CHWDGJ78RD7QEAAQEfsK0BAAAAAAAWABRonn8gZRru0T+coHNpcx7ren00tAEDBAEAAAAiBgOGQn+DyhX/hPlHVC4gXWuD9byRbTK0Bxo/6/IttcgDjhi4aI3xVAAAgAEAAIAAAACAAAAAAAEAAAABDiACAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgEPBAEAAAABEAT+////IgIDhkJ/g8oV/4T5R1QuIF1rg/W8kW0ytAcaP+vyLbXIA45HMEQCIH/s0cP2nddNimNMJRNFlblY0EPxshL3OTqIT0Gx8mOuAiAFj9cPNHNngDNGDDvGzB1oCbvtslxnMXHkUGq3b+KIHQEiHQJ6SH/Bn7dph3uHQtbqGBGPPE5yseqMbeYCp61KQdvgaCEDwUHBcJy1H0lJr1H4+6NndaN2WqirVaqc6CVSIWO+tvgiHgJ6SH/Bn7dph3uHQtbqGBGPPE5yseqMbeYCp61KQdvgaEBXFjBynWtFF1A2xMNmwEuJX1NkrcWmfQzZv9apOaOFbVFq2a9IPAmMxPLZSW/D5pLRJ1S0TdHc/pYwzVZ4LD7FAAEDCGgwAwAAAAAAAQlCAnpIf8Gft2mHe4dC1uoYEY88TnKx6oxt5gKnrUpB2+BoA2HhseneXkLLIAf3ylS54NV+0Tk4+tVtPxnldROo/OA5AQQiUSAZ5kba42rFJsWMmjHmp/2jiiiKy9bJS4sgvXWn/YB8XQA=",
+      "sha256": "sha256:cef9fb78030dc18dd980bff12f173701ec9fcd0084c202f1ea656f0fff0acf31"
+    },
+    {
+      "id": "workflow-00",
+      "psbt": "cHNidP8BAgQCAAAAAQQBAQEFAQEBBgEDAfsEAgAAAAABDiDA+THXAMDcL/B9feGjInfkBduqhiLcvZgndw+EG0J6YQEPBAAAAAABEAT+////AAEDCBhzAQAAAAAAAQlCAnpIf8Gft2mHe4dC1uoYEY88TnKx6oxt5gKnrUpB2+BoA2HhseneXkLLIAf3ylS54NV+0Tk4+tVtPxnldROo/OA5AA==",
+      "sha256": "sha256:facf502aaac1c18df8fa90437a3b35fdefaf631b651012d60ea04540b9601f00"
+    },
+    {
+      "id": "workflow-01",
+      "psbt": "cHNidP8BAgQCAAAAAQQBAQEFAQEBBgEDAfsEAgAAAAABAR+ghgEAAAAAABYAFNDEo+8J6Ze26Z45flGP4+QaEYyhIgYC56slN7XUnpcDCargbp5J82zhyf671E7I4NHMoLT5wxkYc8XaClQAAIABAACAAAAAgAAAAAAAAAAAAQ4gwPkx1wDA3C/wfX3hoyJ35AXbqoYi3L2YJ3cPhBtCemEBDwQAAAAAARAE/v///wABAwgYcwEAAAAAAAEJQgJ6SH/Bn7dph3uHQtbqGBGPPE5yseqMbeYCp61KQdvgaANh4bHp3l5CyyAH98pUueDVftE5OPrVbT8Z5XUTqPzgOQA=",
+      "sha256": "sha256:893c73a51d5cf8e0da31518ebc3f7606f9b2f151424d3fb898dde288ba44d950"
+    },
+    {
+      "id": "workflow-02",
+      "psbt": "cHNidP8BAgQCAAAAAQQBAQEFAQEBBgEAIgcCekh/wZ+3aYd7h0LW6hgRjzxOcrHqjG3mAqetSkHb4GghAylSyo8o6g37bbrUnjjfGpNDehukHrc7H6xkkwckN2EGIggCekh/wZ+3aYd7h0LW6hgRjzxOcrHqjG3mAqetSkHb4GhAJ3LCFKc+Lc4IppMOwehTbOueVq72Kx1tpkeZIM+UfZWRcZk7H//xvRI3CIWe63g2ApFsYIibTFzSle+qWiljOwH7BAIAAAAAAQEfoIYBAAAAAAAWABTQxKPvCemXtumeOX5Rj+PkGhGMoSICAuerJTe11J6XAwmq4G6eSfNs4cn+u9ROyODRzKC0+cMZSDBFAiEAiRbWpFNivV39l2zSAjQ+TuEuZ0sosH5wsiF45/otaMwCIAIXlqCwHdSEzFGdVSLkBHa6cJBdHCyO8p8UIGp/DaypASIGAuerJTe11J6XAwmq4G6eSfNs4cn+u9ROyODRzKC0+cMZGHPF2gpUAACAAQAAgAAAAIAAAAAAAAAAAAEOIMD5MdcAwNwv8H194aMid+QF26qGIty9mCd3D4QbQnphAQ8EAAAAAAEQBP7///8AAQMIGHMBAAAAAAABBCJRICTunhAal3RlYRPQo7kLMXOvGFybNFOLadMNt2k4+SGuAQlCAnpIf8Gft2mHe4dC1uoYEY88TnKx6oxt5gKnrUpB2+BoA2HhseneXkLLIAf3ylS54NV+0Tk4+tVtPxnldROo/OA5AA==",
+      "sha256": "sha256:60bb4353d35fffd1b313cd7bb99e36ecbda03c82771816d595b69e816f26aa73"
+    },
+    {
+      "id": "workflow-03",
+      "psbt": "cHNidP8BAgQCAAAAAQQBAQEFAQEBBgEAIgcCekh/wZ+3aYd7h0LW6hgRjzxOcrHqjG3mAqetSkHb4GghAylSyo8o6g37bbrUnjjfGpNDehukHrc7H6xkkwckN2EGIggCekh/wZ+3aYd7h0LW6hgRjzxOcrHqjG3mAqetSkHb4GhAJ3LCFKc+Lc4IppMOwehTbOueVq72Kx1tpkeZIM+UfZWRcZk7H//xvRI3CIWe63g2ApFsYIibTFzSle+qWiljOwH7BAIAAAAAAQEfoIYBAAAAAAAWABTQxKPvCemXtumeOX5Rj+PkGhGMoQEIbAJIMEUCIQCJFtakU2K9Xf2XbNICND5O4S5nSyiwfnCyIXjn+i1ozAIgAheWoLAd1ITMUZ1VIuQEdrpwkF0cLI7ynxQgan8NrKkBIQLnqyU3tdSelwMJquBunknzbOHJ/rvUTsjg0cygtPnDGQEOIMD5MdcAwNwv8H194aMid+QF26qGIty9mCd3D4QbQnphAQ8EAAAAAAEQBP7///8AAQMIGHMBAAAAAAABBCJRICTunhAal3RlYRPQo7kLMXOvGFybNFOLadMNt2k4+SGuAQlCAnpIf8Gft2mHe4dC1uoYEY88TnKx6oxt5gKnrUpB2+BoA2HhseneXkLLIAf3ylS54NV+0Tk4+tVtPxnldROo/OA5AA==",
+      "sha256": "sha256:38087321f22c88504a6b2b128c659e6388b4bbedc962add0c58a4f6acb0ba43b"
+    },
+    {
+      "id": "workflow-04",
+      "psbt": "cHNidP8BAgQCAAAAAQQBAQEFAQEBBgEAIgcCekh/wZ+3aYd7h0LW6hgRjzxOcrHqjG3mAqetSkHb4GghAylSyo8o6g37bbrUnjjfGpNDehukHrc7H6xkkwckN2EGIggCekh/wZ+3aYd7h0LW6hgRjzxOcrHqjG3mAqetSkHb4GhAJ3LCFKc+Lc4IppMOwehTbOueVq72Kx1tpkeZIM+UfZWRcZk7H//xvRI3CIWe63g2ApFsYIibTFzSle+qWiljOwH7BAIAAAAAAQEfoIYBAAAAAAAWABTQxKPvCemXtumeOX5Rj+PkGhGMoQEIbAJIMEUCIQCJFtakU2K9Xf2XbNICND5O4S5nSyiwfnCyIXjn+i1ozAIgAheWoLAd1ITMUZ1VIuQEdrpwkF0cLI7ynxQgan8NrKkBIQLnqyU3tdSelwMJquBunknzbOHJ/rvUTsjg0cygtPnDGQEOIMD5MdcAwNwv8H194aMid+QF26qGIty9mCd3D4QbQnphAQ8EAAAAAAEQBP7///8AAQMIGHMBAAAAAAABBCJRICTunhAal3RlYRPQo7kLMXOvGFybNFOLadMNt2k4+SGuAQlCAnpIf8Gft2mHe4dC1uoYEY88TnKx6oxt5gKnrUpB2+BoA2HhseneXkLLIAf3ylS54NV+0Tk4+tVtPxnldROo/OA5AA==",
+      "sha256": "sha256:38087321f22c88504a6b2b128c659e6388b4bbedc962add0c58a4f6acb0ba43b"
+    },
+    {
+      "id": "workflow-05",
+      "psbt": "cHNidP8BAgQCAAAAAQQBAgEFAQEBBgEDAfsEAgAAAAABDiDA+THXAMDcL/B9feGjInfkBduqhiLcvZgndw+EG0J6YQEPBAAAAAABEAT+////AAEOIJXYgNLwzevdDRJRP6lz7Xeru+hb9aFbzcGLyDX4cejfAQ8EAAAAAAEQBP7///8AAQMIMOYCAAAAAAABCUICekh/wZ+3aYd7h0LW6hgRjzxOcrHqjG3mAqetSkHb4GgDYeGx6d5eQssgB/fKVLng1X7ROTj61W0/GeV1E6j84DkA",
+      "sha256": "sha256:9aa047dd965327719214e05a5bb8172c32e424b95e7cd9a9f316696175113e79"
+    },
+    {
+      "id": "workflow-06",
+      "psbt": "cHNidP8BAgQCAAAAAQQBAgEFAQEBBgEDAfsEAgAAAAABAR+ghgEAAAAAABYAFNDEo+8J6Ze26Z45flGP4+QaEYyhIgYC56slN7XUnpcDCargbp5J82zhyf671E7I4NHMoLT5wxkYc8XaClQAAIABAACAAAAAgAAAAAAAAAAAAQ4gwPkx1wDA3C/wfX3hoyJ35AXbqoYi3L2YJ3cPhBtCemEBDwQAAAAAARAE/v///wABAR+ghgEAAAAAABYAFG+gFlAKPGpzfrsmDi3cp4upI0VYIgYD7u0gWmkCL+1KYqAkV/NpmxnAa/dL+AGsxtmuhLwWqeEYc8XaClQAAIABAACAAAAAgAAAAAABAAAAAQ4gldiA0vDN690NElE/qXPtd6u76Fv1oVvNwYvINfhx6N8BDwQAAAAAARAE/v///wABAwgw5gIAAAAAAAEJQgJ6SH/Bn7dph3uHQtbqGBGPPE5yseqMbeYCp61KQdvgaANh4bHp3l5CyyAH98pUueDVftE5OPrVbT8Z5XUTqPzgOQA=",
+      "sha256": "sha256:8abfccd446e41792c4e074f3683e798880376528e7573cad7ee36ffd7668f604"
+    },
+    {
+      "id": "workflow-07",
+      "psbt": "cHNidP8BAgQCAAAAAQQBAgEFAQEBBgEAIgcCekh/wZ+3aYd7h0LW6hgRjzxOcrHqjG3mAqetSkHb4GghAmcOzf/PYeb50isRkiio5eVa07QCBzxkbX4DJQwH/4eRIggCekh/wZ+3aYd7h0LW6hgRjzxOcrHqjG3mAqetSkHb4GhA+Zz2pHZ6ZB86WLG51PiJstSsyTp0kNq5r8HtT4qvCjjdUmr4iDUAiAAVx0jzsT2+ymUPNFFMs6It2Wx+UZs2TQH7BAIAAAAAAQEfoIYBAAAAAAAWABTQxKPvCemXtumeOX5Rj+PkGhGMoSICAuerJTe11J6XAwmq4G6eSfNs4cn+u9ROyODRzKC0+cMZRzBEAiBSY20zBuplGPvfTyQ5p7jq1UMrLefHtCfhamw5qzk96wIgP/lU5A3A/y8VJPVEGwmA79NTqTNrIlkBmyQGUVXiKBIBIgYC56slN7XUnpcDCargbp5J82zhyf671E7I4NHMoLT5wxkYc8XaClQAAIABAACAAAAAgAAAAAAAAAAAAQ4gwPkx1wDA3C/wfX3hoyJ35AXbqoYi3L2YJ3cPhBtCemEBDwQAAAAAARAE/v///wABAR+ghgEAAAAAABYAFG+gFlAKPGpzfrsmDi3cp4upI0VYIgID7u0gWmkCL+1KYqAkV/NpmxnAa/dL+AGsxtmuhLwWqeFIMEUCIQCymbbzv+dZll5k+bwL8twlLK+JEM9KXpBpl18UExjPNwIgOXWPp6qDtBUOmLae2cbUQnYT4/0KEWF+rOX8yiT04jkBIgYD7u0gWmkCL+1KYqAkV/NpmxnAa/dL+AGsxtmuhLwWqeEYc8XaClQAAIABAACAAAAAgAAAAAABAAAAAQ4gldiA0vDN690NElE/qXPtd6u76Fv1oVvNwYvINfhx6N8BDwQAAAAAARAE/v///wABAwgw5gIAAAAAAAEEIlEgQR/Q1fcGFdKAXOVfN/x5gNJki6BFaTzD5fcxsppcDGkBCUICekh/wZ+3aYd7h0LW6hgRjzxOcrHqjG3mAqetSkHb4GgDYeGx6d5eQssgB/fKVLng1X7ROTj61W0/GeV1E6j84DkA",
+      "sha256": "sha256:8d76477586ac88daf894582cd7e53fa6273c63aa63167b4fad5eb2cd7feaa875"
+    },
+    {
+      "id": "workflow-08",
+      "psbt": "cHNidP8BAgQCAAAAAQQBAgEFAQEBBgEAIgcCekh/wZ+3aYd7h0LW6hgRjzxOcrHqjG3mAqetSkHb4GghAmcOzf/PYeb50isRkiio5eVa07QCBzxkbX4DJQwH/4eRIggCekh/wZ+3aYd7h0LW6hgRjzxOcrHqjG3mAqetSkHb4GhA+Zz2pHZ6ZB86WLG51PiJstSsyTp0kNq5r8HtT4qvCjjdUmr4iDUAiAAVx0jzsT2+ymUPNFFMs6It2Wx+UZs2TQH7BAIAAAAAAQEfoIYBAAAAAAAWABTQxKPvCemXtumeOX5Rj+PkGhGMoQEIawJHMEQCIFJjbTMG6mUY+99PJDmnuOrVQyst58e0J+FqbDmrOT3rAiA/+VTkDcD/LxUk9UQbCYDv01OpM2siWQGbJAZRVeIoEgEhAuerJTe11J6XAwmq4G6eSfNs4cn+u9ROyODRzKC0+cMZAQ4gwPkx1wDA3C/wfX3hoyJ35AXbqoYi3L2YJ3cPhBtCemEBDwQAAAAAARAE/v///wABAR+ghgEAAAAAABYAFG+gFlAKPGpzfrsmDi3cp4upI0VYAQhsAkgwRQIhALKZtvO/51mWXmT5vAvy3CUsr4kQz0pekGmXXxQTGM83AiA5dY+nqoO0FQ6Ytp7ZxtRCdhPj/QoRYX6s5fzKJPTiOQEhA+7tIFppAi/tSmKgJFfzaZsZwGv3S/gBrMbZroS8FqnhAQ4gldiA0vDN690NElE/qXPtd6u76Fv1oVvNwYvINfhx6N8BDwQAAAAAARAE/v///wABAwgw5gIAAAAAAAEEIlEgQR/Q1fcGFdKAXOVfN/x5gNJki6BFaTzD5fcxsppcDGkBCUICekh/wZ+3aYd7h0LW6hgRjzxOcrHqjG3mAqetSkHb4GgDYeGx6d5eQssgB/fKVLng1X7ROTj61W0/GeV1E6j84DkA",
+      "sha256": "sha256:68b8b57867f43d62c4a95a8aeb1fb51fa4f189d3ffba1546cc243fff2b8488c2"
+    },
+    {
+      "id": "workflow-09",
+      "psbt": "cHNidP8BAgQCAAAAAQQBAgEFAQEBBgEAIgcCekh/wZ+3aYd7h0LW6hgRjzxOcrHqjG3mAqetSkHb4GghAmcOzf/PYeb50isRkiio5eVa07QCBzxkbX4DJQwH/4eRIggCekh/wZ+3aYd7h0LW6hgRjzxOcrHqjG3mAqetSkHb4GhA+Zz2pHZ6ZB86WLG51PiJstSsyTp0kNq5r8HtT4qvCjjdUmr4iDUAiAAVx0jzsT2+ymUPNFFMs6It2Wx+UZs2TQH7BAIAAAAAAQEfoIYBAAAAAAAWABTQxKPvCemXtumeOX5Rj+PkGhGMoQEIawJHMEQCIFJjbTMG6mUY+99PJDmnuOrVQyst58e0J+FqbDmrOT3rAiA/+VTkDcD/LxUk9UQbCYDv01OpM2siWQGbJAZRVeIoEgEhAuerJTe11J6XAwmq4G6eSfNs4cn+u9ROyODRzKC0+cMZAQ4gwPkx1wDA3C/wfX3hoyJ35AXbqoYi3L2YJ3cPhBtCemEBDwQAAAAAARAE/v///wABAR+ghgEAAAAAABYAFG+gFlAKPGpzfrsmDi3cp4upI0VYAQhsAkgwRQIhALKZtvO/51mWXmT5vAvy3CUsr4kQz0pekGmXXxQTGM83AiA5dY+nqoO0FQ6Ytp7ZxtRCdhPj/QoRYX6s5fzKJPTiOQEhA+7tIFppAi/tSmKgJFfzaZsZwGv3S/gBrMbZroS8FqnhAQ4gldiA0vDN690NElE/qXPtd6u76Fv1oVvNwYvINfhx6N8BDwQAAAAAARAE/v///wABAwgw5gIAAAAAAAEEIlEgQR/Q1fcGFdKAXOVfN/x5gNJki6BFaTzD5fcxsppcDGkBCUICekh/wZ+3aYd7h0LW6hgRjzxOcrHqjG3mAqetSkHb4GgDYeGx6d5eQssgB/fKVLng1X7ROTj61W0/GeV1E6j84DkA",
+      "sha256": "sha256:68b8b57867f43d62c4a95a8aeb1fb51fa4f189d3ffba1546cc243fff2b8488c2"
+    },
+    {
+      "id": "workflow-10",
+      "psbt": "cHNidP8BAgQCAAAAAQQBAgEFAQEBBgEDAfsEAgAAAAABDiDA+THXAMDcL/B9feGjInfkBduqhiLcvZgndw+EG0J6YQEPBAAAAAABEAT+////AAEOIDmZxwNW/pqcZlJUmvTRHClHN3P+8T4xmYfbh6T+WaWjAQ8EAAAAAAEQBP7///8AAQMIMOYCAAAAAAABCUICekh/wZ+3aYd7h0LW6hgRjzxOcrHqjG3mAqetSkHb4GgDYeGx6d5eQssgB/fKVLng1X7ROTj61W0/GeV1E6j84DkA",
+      "sha256": "sha256:91e184d2bcf32a64f402d3e205b33c458016fd7d091f568a6f63c688594d5042"
+    },
+    {
+      "id": "workflow-11",
+      "psbt": "cHNidP8BAgQCAAAAAQQBAgEFAQEBBgEDAfsEAgAAAAABAR+ghgEAAAAAABYAFNDEo+8J6Ze26Z45flGP4+QaEYyhIgYC56slN7XUnpcDCargbp5J82zhyf671E7I4NHMoLT5wxkYc8XaClQAAIABAACAAAAAgAAAAAAAAAAAAQ4gwPkx1wDA3C/wfX3hoyJ35AXbqoYi3L2YJ3cPhBtCemEBDwQAAAAAARAE/v///wABAR+ghgEAAAAAABYAFJkHFQSGusVoD5tG/eYwDmno5PYjIgYDvYTxIfMyWzxJ/szCDPJ0p9Thc7PjFiLcHEzxq6aF2BoYP2NaY1QAAIABAACAAAAAgAAAAAABAAAAAQ4gOZnHA1b+mpxmUlSa9NEcKUc3c/7xPjGZh9uHpP5ZpaMBDwQAAAAAARAE/v///wABAwgw5gIAAAAAAAEJQgJ6SH/Bn7dph3uHQtbqGBGPPE5yseqMbeYCp61KQdvgaANh4bHp3l5CyyAH98pUueDVftE5OPrVbT8Z5XUTqPzgOQA=",
+      "sha256": "sha256:e4d96e0a5b31d5220f886dd7719173394674af09d8d11bbaef1507320e53df73"
+    },
+    {
+      "id": "workflow-12",
+      "psbt": "cHNidP8BAgQCAAAAAQQBAgEFAQEBBgEDAfsEAgAAAAABAR+ghgEAAAAAABYAFNDEo+8J6Ze26Z45flGP4+QaEYyhIgYC56slN7XUnpcDCargbp5J82zhyf671E7I4NHMoLT5wxkYc8XaClQAAIABAACAAAAAgAAAAAAAAAAAAQ4gwPkx1wDA3C/wfX3hoyJ35AXbqoYi3L2YJ3cPhBtCemEBDwQAAAAAARAE/v///yIdAnpIf8Gft2mHe4dC1uoYEY88TnKx6oxt5gKnrUpB2+BoIQMpUsqPKOoN+2261J443xqTQ3obpB63Ox+sZJMHJDdhBiIeAnpIf8Gft2mHe4dC1uoYEY88TnKx6oxt5gKnrUpB2+BoQGGiAVGSbQR38xm4aFBMmZzPcsuqfTFQShTMBldITF+cw/yFy33U0jrHORBp7oA6kQ88mWoEanDuTaDKiKsRUZoAAQEfoIYBAAAAAAAWABSZBxUEhrrFaA+bRv3mMA5p6OT2IyIGA72E8SHzMls8Sf7MwgzydKfU4XOz4xYi3BxM8aumhdgaGD9jWmNUAACAAQAAgAAAAIAAAAAAAQAAAAEOIDmZxwNW/pqcZlJUmvTRHClHN3P+8T4xmYfbh6T+WaWjAQ8EAAAAAAEQBP7///8AAQMIMOYCAAAAAAABCUICekh/wZ+3aYd7h0LW6hgRjzxOcrHqjG3mAqetSkHb4GgDYeGx6d5eQssgB/fKVLng1X7ROTj61W0/GeV1E6j84DkA",
+      "sha256": "sha256:ec2519e0176005f7210d046e56b9ba18649ee555e41b719aa74e987794087919"
+    },
+    {
+      "id": "workflow-13",
+      "psbt": "cHNidP8BAgQCAAAAAQQBAgEFAQEBBgEAAfsEAgAAAAABAR+ghgEAAAAAABYAFNDEo+8J6Ze26Z45flGP4+QaEYyhIgYC56slN7XUnpcDCargbp5J82zhyf671E7I4NHMoLT5wxkYc8XaClQAAIABAACAAAAAgAAAAAAAAAAAAQ4gwPkx1wDA3C/wfX3hoyJ35AXbqoYi3L2YJ3cPhBtCemEBDwQAAAAAARAE/v///yIdAnpIf8Gft2mHe4dC1uoYEY88TnKx6oxt5gKnrUpB2+BoIQMpUsqPKOoN+2261J443xqTQ3obpB63Ox+sZJMHJDdhBiIeAnpIf8Gft2mHe4dC1uoYEY88TnKx6oxt5gKnrUpB2+BoQGGiAVGSbQR38xm4aFBMmZzPcsuqfTFQShTMBldITF+cw/yFy33U0jrHORBp7oA6kQ88mWoEanDuTaDKiKsRUZoAAQEfoIYBAAAAAAAWABSZBxUEhrrFaA+bRv3mMA5p6OT2IyICA72E8SHzMls8Sf7MwgzydKfU4XOz4xYi3BxM8aumhdgaRzBEAiB+Lec7AFjGAeUli0HpTF+tvC27rXQL5eaoOy7ybWHqfAIge1C+CIFjGwaiU4am40x9ZS/WFXClOCYviQZjPnTtJsIBIgYDvYTxIfMyWzxJ/szCDPJ0p9Thc7PjFiLcHEzxq6aF2BoYP2NaY1QAAIABAACAAAAAgAAAAAABAAAAAQ4gOZnHA1b+mpxmUlSa9NEcKUc3c/7xPjGZh9uHpP5ZpaMBDwQAAAAAARAE/v///yIdAnpIf8Gft2mHe4dC1uoYEY88TnKx6oxt5gKnrUpB2+BoIQOcaPHGSUYGtOPHPZSSAn3hpVsiwZhpTY17fY0chlNk6CIeAnpIf8Gft2mHe4dC1uoYEY88TnKx6oxt5gKnrUpB2+BoQC8TWaS3k4MLbUs0UPHs7Q2JTYgagUi5LO+jkRi0leOHFT/dqx3+W7cL84o7+5TYOla03NqWvldaPdk5R7TDKhMAAQMIMOYCAAAAAAABBCJRIHXYX6pjg8Ed6cviuJjsDHngmtZQb7Pd+rYwYT4skRjFAQlCAnpIf8Gft2mHe4dC1uoYEY88TnKx6oxt5gKnrUpB2+BoA2HhseneXkLLIAf3ylS54NV+0Tk4+tVtPxnldROo/OA5AA==",
+      "sha256": "sha256:ba19408b90f61934ac333eb544fdf16acb9a717054333afb7164981f3910d84c"
+    },
+    {
+      "id": "workflow-14",
+      "psbt": "cHNidP8BAgQCAAAAAQQBAgEFAQEBBgEAAfsEAgAAAAABAR+ghgEAAAAAABYAFNDEo+8J6Ze26Z45flGP4+QaEYyhIgIC56slN7XUnpcDCargbp5J82zhyf671E7I4NHMoLT5wxlIMEUCIQC5sZc/GTSQLYb1baCPH0/G2jhGUbDDkbQXoWsgkxHbagIgVrTFjiV6zvvJBMFJxVWOHhDMsrT64jYOin4sVv5sja8BIgYC56slN7XUnpcDCargbp5J82zhyf671E7I4NHMoLT5wxkYc8XaClQAAIABAACAAAAAgAAAAAAAAAAAAQ4gwPkx1wDA3C/wfX3hoyJ35AXbqoYi3L2YJ3cPhBtCemEBDwQAAAAAARAE/v///yIdAnpIf8Gft2mHe4dC1uoYEY88TnKx6oxt5gKnrUpB2+BoIQMpUsqPKOoN+2261J443xqTQ3obpB63Ox+sZJMHJDdhBiIeAnpIf8Gft2mHe4dC1uoYEY88TnKx6oxt5gKnrUpB2+BoQGGiAVGSbQR38xm4aFBMmZzPcsuqfTFQShTMBldITF+cw/yFy33U0jrHORBp7oA6kQ88mWoEanDuTaDKiKsRUZoAAQEfoIYBAAAAAAAWABSZBxUEhrrFaA+bRv3mMA5p6OT2IyICA72E8SHzMls8Sf7MwgzydKfU4XOz4xYi3BxM8aumhdgaRzBEAiB+Lec7AFjGAeUli0HpTF+tvC27rXQL5eaoOy7ybWHqfAIge1C+CIFjGwaiU4am40x9ZS/WFXClOCYviQZjPnTtJsIBIgYDvYTxIfMyWzxJ/szCDPJ0p9Thc7PjFiLcHEzxq6aF2BoYP2NaY1QAAIABAACAAAAAgAAAAAABAAAAAQ4gOZnHA1b+mpxmUlSa9NEcKUc3c/7xPjGZh9uHpP5ZpaMBDwQAAAAAARAE/v///yIdAnpIf8Gft2mHe4dC1uoYEY88TnKx6oxt5gKnrUpB2+BoIQOcaPHGSUYGtOPHPZSSAn3hpVsiwZhpTY17fY0chlNk6CIeAnpIf8Gft2mHe4dC1uoYEY88TnKx6oxt5gKnrUpB2+BoQC8TWaS3k4MLbUs0UPHs7Q2JTYgagUi5LO+jkRi0leOHFT/dqx3+W7cL84o7+5TYOla03NqWvldaPdk5R7TDKhMAAQMIMOYCAAAAAAABBCJRIHXYX6pjg8Ed6cviuJjsDHngmtZQb7Pd+rYwYT4skRjFAQlCAnpIf8Gft2mHe4dC1uoYEY88TnKx6oxt5gKnrUpB2+BoA2HhseneXkLLIAf3ylS54NV+0Tk4+tVtPxnldROo/OA5AA==",
+      "sha256": "sha256:a72716e891655f6a21cd40ca19d90ca2edbe5c6865b27b7542f41e6acb0b4d4f"
+    },
+    {
+      "id": "workflow-15",
+      "psbt": "cHNidP8BAgQCAAAAAQQBAgEFAQEBBgEAAfsEAgAAAAABAR+ghgEAAAAAABYAFNDEo+8J6Ze26Z45flGP4+QaEYyhAQhsAkgwRQIhALmxlz8ZNJAthvVtoI8fT8baOEZRsMORtBehayCTEdtqAiBWtMWOJXrO+8kEwUnFVY4eEMyytPriNg6KfixW/myNrwEhAuerJTe11J6XAwmq4G6eSfNs4cn+u9ROyODRzKC0+cMZAQ4gwPkx1wDA3C/wfX3hoyJ35AXbqoYi3L2YJ3cPhBtCemEBDwQAAAAAARAE/v///yIdAnpIf8Gft2mHe4dC1uoYEY88TnKx6oxt5gKnrUpB2+BoIQMpUsqPKOoN+2261J443xqTQ3obpB63Ox+sZJMHJDdhBiIeAnpIf8Gft2mHe4dC1uoYEY88TnKx6oxt5gKnrUpB2+BoQGGiAVGSbQR38xm4aFBMmZzPcsuqfTFQShTMBldITF+cw/yFy33U0jrHORBp7oA6kQ88mWoEanDuTaDKiKsRUZoAAQEfoIYBAAAAAAAWABSZBxUEhrrFaA+bRv3mMA5p6OT2IwEIawJHMEQCIH4t5zsAWMYB5SWLQelMX628LbutdAvl5qg7LvJtYep8AiB7UL4IgWMbBqJThqbjTH1lL9YVcKU4Ji+JBmM+dO0mwgEhA72E8SHzMls8Sf7MwgzydKfU4XOz4xYi3BxM8aumhdgaAQ4gOZnHA1b+mpxmUlSa9NEcKUc3c/7xPjGZh9uHpP5ZpaMBDwQAAAAAARAE/v///yIdAnpIf8Gft2mHe4dC1uoYEY88TnKx6oxt5gKnrUpB2+BoIQOcaPHGSUYGtOPHPZSSAn3hpVsiwZhpTY17fY0chlNk6CIeAnpIf8Gft2mHe4dC1uoYEY88TnKx6oxt5gKnrUpB2+BoQC8TWaS3k4MLbUs0UPHs7Q2JTYgagUi5LO+jkRi0leOHFT/dqx3+W7cL84o7+5TYOla03NqWvldaPdk5R7TDKhMAAQMIMOYCAAAAAAABBCJRIHXYX6pjg8Ed6cviuJjsDHngmtZQb7Pd+rYwYT4skRjFAQlCAnpIf8Gft2mHe4dC1uoYEY88TnKx6oxt5gKnrUpB2+BoA2HhseneXkLLIAf3ylS54NV+0Tk4+tVtPxnldROo/OA5AA==",
+      "sha256": "sha256:fe7b4109f1ba5732049e1f1b41f16906983c867d428a687398ec1b6c33b9a639"
+    },
+    {
+      "id": "workflow-16",
+      "psbt": "cHNidP8BAgQCAAAAAQQBAgEFAQEBBgEAAfsEAgAAAAABAR+ghgEAAAAAABYAFNDEo+8J6Ze26Z45flGP4+QaEYyhAQhsAkgwRQIhALmxlz8ZNJAthvVtoI8fT8baOEZRsMORtBehayCTEdtqAiBWtMWOJXrO+8kEwUnFVY4eEMyytPriNg6KfixW/myNrwEhAuerJTe11J6XAwmq4G6eSfNs4cn+u9ROyODRzKC0+cMZAQ4gwPkx1wDA3C/wfX3hoyJ35AXbqoYi3L2YJ3cPhBtCemEBDwQAAAAAARAE/v///yIdAnpIf8Gft2mHe4dC1uoYEY88TnKx6oxt5gKnrUpB2+BoIQMpUsqPKOoN+2261J443xqTQ3obpB63Ox+sZJMHJDdhBiIeAnpIf8Gft2mHe4dC1uoYEY88TnKx6oxt5gKnrUpB2+BoQGGiAVGSbQR38xm4aFBMmZzPcsuqfTFQShTMBldITF+cw/yFy33U0jrHORBp7oA6kQ88mWoEanDuTaDKiKsRUZoAAQEfoIYBAAAAAAAWABSZBxUEhrrFaA+bRv3mMA5p6OT2IwEIawJHMEQCIH4t5zsAWMYB5SWLQelMX628LbutdAvl5qg7LvJtYep8AiB7UL4IgWMbBqJThqbjTH1lL9YVcKU4Ji+JBmM+dO0mwgEhA72E8SHzMls8Sf7MwgzydKfU4XOz4xYi3BxM8aumhdgaAQ4gOZnHA1b+mpxmUlSa9NEcKUc3c/7xPjGZh9uHpP5ZpaMBDwQAAAAAARAE/v///yIdAnpIf8Gft2mHe4dC1uoYEY88TnKx6oxt5gKnrUpB2+BoIQOcaPHGSUYGtOPHPZSSAn3hpVsiwZhpTY17fY0chlNk6CIeAnpIf8Gft2mHe4dC1uoYEY88TnKx6oxt5gKnrUpB2+BoQC8TWaS3k4MLbUs0UPHs7Q2JTYgagUi5LO+jkRi0leOHFT/dqx3+W7cL84o7+5TYOla03NqWvldaPdk5R7TDKhMAAQMIMOYCAAAAAAABBCJRIHXYX6pjg8Ed6cviuJjsDHngmtZQb7Pd+rYwYT4skRjFAQlCAnpIf8Gft2mHe4dC1uoYEY88TnKx6oxt5gKnrUpB2+BoA2HhseneXkLLIAf3ylS54NV+0Tk4+tVtPxnldROo/OA5AA==",
+      "sha256": "sha256:fe7b4109f1ba5732049e1f1b41f16906983c867d428a687398ec1b6c33b9a639"
+    }
+  ],
+  "scenarios": [
+    {
+      "id": "parse-snap-00-initial",
+      "title": "snap-00-initial",
+      "fixture": "snap-00-initial",
+      "steps": [
+        {
+          "id": "compare",
+          "operation": "compare-parsers",
+          "input": "fixture",
+          "adapters": [
+            "rust-psbt-v2",
+            "libwally"
+          ],
+          "expected": {
+            "lab": "accepted",
+            "rust-psbt-v2": "accepted",
+            "libwally": "accepted"
+          }
+        }
+      ]
+    },
+    {
+      "id": "parse-snap-01-contribute-coldcard-a-merged",
+      "title": "snap-01-contribute-coldcard-a-merged",
+      "fixture": "snap-01-contribute-coldcard-a-merged",
+      "steps": [
+        {
+          "id": "compare",
+          "operation": "compare-parsers",
+          "input": "fixture",
+          "adapters": [
+            "rust-psbt-v2",
+            "libwally"
+          ],
+          "expected": {
+            "lab": "accepted",
+            "rust-psbt-v2": "accepted",
+            "libwally": "accepted"
+          }
+        }
+      ]
+    },
+    {
+      "id": "parse-snap-01-contribute-coldcard-a-returned",
+      "title": "snap-01-contribute-coldcard-a-returned",
+      "fixture": "snap-01-contribute-coldcard-a-returned",
+      "steps": [
+        {
+          "id": "compare",
+          "operation": "compare-parsers",
+          "input": "fixture",
+          "adapters": [
+            "rust-psbt-v2",
+            "libwally"
+          ],
+          "expected": {
+            "lab": "accepted",
+            "rust-psbt-v2": "accepted",
+            "libwally": "accepted"
+          }
+        }
+      ]
+    },
+    {
+      "id": "parse-snap-02-resolve-sign-jade-b-merged",
+      "title": "snap-02-resolve-sign-jade-b-merged",
+      "fixture": "snap-02-resolve-sign-jade-b-merged",
+      "steps": [
+        {
+          "id": "compare",
+          "operation": "compare-parsers",
+          "input": "fixture",
+          "adapters": [
+            "rust-psbt-v2",
+            "libwally"
+          ],
+          "expected": {
+            "lab": "accepted",
+            "rust-psbt-v2": "accepted",
+            "libwally": "accepted"
+          }
+        }
+      ]
+    },
+    {
+      "id": "parse-snap-02-resolve-sign-jade-b-returned",
+      "title": "snap-02-resolve-sign-jade-b-returned",
+      "fixture": "snap-02-resolve-sign-jade-b-returned",
+      "steps": [
+        {
+          "id": "compare",
+          "operation": "compare-parsers",
+          "input": "fixture",
+          "adapters": [
+            "rust-psbt-v2",
+            "libwally"
+          ],
+          "expected": {
+            "lab": "accepted",
+            "rust-psbt-v2": "accepted",
+            "libwally": "accepted"
+          }
+        }
+      ]
+    },
+    {
+      "id": "parse-snap-03-sign-coldcard-a-merged",
+      "title": "snap-03-sign-coldcard-a-merged",
+      "fixture": "snap-03-sign-coldcard-a-merged",
+      "steps": [
+        {
+          "id": "compare",
+          "operation": "compare-parsers",
+          "input": "fixture",
+          "adapters": [
+            "rust-psbt-v2",
+            "libwally"
+          ],
+          "expected": {
+            "lab": "accepted",
+            "rust-psbt-v2": "accepted",
+            "libwally": "accepted"
+          }
+        }
+      ]
+    },
+    {
+      "id": "parse-snap-03-sign-coldcard-a-returned",
+      "title": "snap-03-sign-coldcard-a-returned",
+      "fixture": "snap-03-sign-coldcard-a-returned",
+      "steps": [
+        {
+          "id": "compare",
+          "operation": "compare-parsers",
+          "input": "fixture",
+          "adapters": [
+            "rust-psbt-v2",
+            "libwally"
+          ],
+          "expected": {
+            "lab": "accepted",
+            "rust-psbt-v2": "accepted",
+            "libwally": "accepted"
+          }
+        }
+      ]
+    },
+    {
+      "id": "parse-snap-final",
+      "title": "snap-final",
+      "fixture": "snap-final",
+      "steps": [
+        {
+          "id": "compare",
+          "operation": "compare-parsers",
+          "input": "fixture",
+          "adapters": [
+            "rust-psbt-v2",
+            "libwally"
+          ],
+          "expected": {
+            "lab": "accepted",
+            "rust-psbt-v2": "accepted",
+            "libwally": "accepted"
+          }
+        }
+      ]
+    },
+    {
+      "id": "parse-workflow-00",
+      "title": "workflow-00",
+      "fixture": "workflow-00",
+      "steps": [
+        {
+          "id": "compare",
+          "operation": "compare-parsers",
+          "input": "fixture",
+          "adapters": [
+            "rust-psbt-v2",
+            "libwally"
+          ],
+          "expected": {
+            "lab": "accepted",
+            "rust-psbt-v2": "accepted",
+            "libwally": "accepted"
+          }
+        }
+      ]
+    },
+    {
+      "id": "parse-workflow-01",
+      "title": "workflow-01",
+      "fixture": "workflow-01",
+      "steps": [
+        {
+          "id": "compare",
+          "operation": "compare-parsers",
+          "input": "fixture",
+          "adapters": [
+            "rust-psbt-v2",
+            "libwally"
+          ],
+          "expected": {
+            "lab": "accepted",
+            "rust-psbt-v2": "accepted",
+            "libwally": "accepted"
+          }
+        }
+      ]
+    },
+    {
+      "id": "parse-workflow-02",
+      "title": "workflow-02",
+      "fixture": "workflow-02",
+      "steps": [
+        {
+          "id": "compare",
+          "operation": "compare-parsers",
+          "input": "fixture",
+          "adapters": [
+            "rust-psbt-v2",
+            "libwally"
+          ],
+          "expected": {
+            "lab": "accepted",
+            "rust-psbt-v2": "accepted",
+            "libwally": "accepted"
+          }
+        }
+      ]
+    },
+    {
+      "id": "parse-workflow-03",
+      "title": "workflow-03",
+      "fixture": "workflow-03",
+      "steps": [
+        {
+          "id": "compare",
+          "operation": "compare-parsers",
+          "input": "fixture",
+          "adapters": [
+            "rust-psbt-v2",
+            "libwally"
+          ],
+          "expected": {
+            "lab": "accepted",
+            "rust-psbt-v2": "accepted",
+            "libwally": "accepted"
+          }
+        }
+      ]
+    },
+    {
+      "id": "parse-workflow-04",
+      "title": "workflow-04",
+      "fixture": "workflow-04",
+      "steps": [
+        {
+          "id": "compare",
+          "operation": "compare-parsers",
+          "input": "fixture",
+          "adapters": [
+            "rust-psbt-v2",
+            "libwally"
+          ],
+          "expected": {
+            "lab": "accepted",
+            "rust-psbt-v2": "accepted",
+            "libwally": "accepted"
+          }
+        }
+      ]
+    },
+    {
+      "id": "parse-workflow-05",
+      "title": "workflow-05",
+      "fixture": "workflow-05",
+      "steps": [
+        {
+          "id": "compare",
+          "operation": "compare-parsers",
+          "input": "fixture",
+          "adapters": [
+            "rust-psbt-v2",
+            "libwally"
+          ],
+          "expected": {
+            "lab": "accepted",
+            "rust-psbt-v2": "accepted",
+            "libwally": "accepted"
+          }
+        }
+      ]
+    },
+    {
+      "id": "parse-workflow-06",
+      "title": "workflow-06",
+      "fixture": "workflow-06",
+      "steps": [
+        {
+          "id": "compare",
+          "operation": "compare-parsers",
+          "input": "fixture",
+          "adapters": [
+            "rust-psbt-v2",
+            "libwally"
+          ],
+          "expected": {
+            "lab": "accepted",
+            "rust-psbt-v2": "accepted",
+            "libwally": "accepted"
+          }
+        }
+      ]
+    },
+    {
+      "id": "parse-workflow-07",
+      "title": "workflow-07",
+      "fixture": "workflow-07",
+      "steps": [
+        {
+          "id": "compare",
+          "operation": "compare-parsers",
+          "input": "fixture",
+          "adapters": [
+            "rust-psbt-v2",
+            "libwally"
+          ],
+          "expected": {
+            "lab": "accepted",
+            "rust-psbt-v2": "accepted",
+            "libwally": "accepted"
+          }
+        }
+      ]
+    },
+    {
+      "id": "parse-workflow-08",
+      "title": "workflow-08",
+      "fixture": "workflow-08",
+      "steps": [
+        {
+          "id": "compare",
+          "operation": "compare-parsers",
+          "input": "fixture",
+          "adapters": [
+            "rust-psbt-v2",
+            "libwally"
+          ],
+          "expected": {
+            "lab": "accepted",
+            "rust-psbt-v2": "accepted",
+            "libwally": "accepted"
+          }
+        }
+      ]
+    },
+    {
+      "id": "parse-workflow-09",
+      "title": "workflow-09",
+      "fixture": "workflow-09",
+      "steps": [
+        {
+          "id": "compare",
+          "operation": "compare-parsers",
+          "input": "fixture",
+          "adapters": [
+            "rust-psbt-v2",
+            "libwally"
+          ],
+          "expected": {
+            "lab": "accepted",
+            "rust-psbt-v2": "accepted",
+            "libwally": "accepted"
+          }
+        }
+      ]
+    },
+    {
+      "id": "parse-workflow-10",
+      "title": "workflow-10",
+      "fixture": "workflow-10",
+      "steps": [
+        {
+          "id": "compare",
+          "operation": "compare-parsers",
+          "input": "fixture",
+          "adapters": [
+            "rust-psbt-v2",
+            "libwally"
+          ],
+          "expected": {
+            "lab": "accepted",
+            "rust-psbt-v2": "accepted",
+            "libwally": "accepted"
+          }
+        }
+      ]
+    },
+    {
+      "id": "parse-workflow-11",
+      "title": "workflow-11",
+      "fixture": "workflow-11",
+      "steps": [
+        {
+          "id": "compare",
+          "operation": "compare-parsers",
+          "input": "fixture",
+          "adapters": [
+            "rust-psbt-v2",
+            "libwally"
+          ],
+          "expected": {
+            "lab": "accepted",
+            "rust-psbt-v2": "accepted",
+            "libwally": "accepted"
+          }
+        }
+      ]
+    },
+    {
+      "id": "parse-workflow-12",
+      "title": "workflow-12",
+      "fixture": "workflow-12",
+      "steps": [
+        {
+          "id": "compare",
+          "operation": "compare-parsers",
+          "input": "fixture",
+          "adapters": [
+            "rust-psbt-v2",
+            "libwally"
+          ],
+          "expected": {
+            "lab": "accepted",
+            "rust-psbt-v2": "accepted",
+            "libwally": "accepted"
+          }
+        }
+      ]
+    },
+    {
+      "id": "parse-workflow-13",
+      "title": "workflow-13",
+      "fixture": "workflow-13",
+      "steps": [
+        {
+          "id": "compare",
+          "operation": "compare-parsers",
+          "input": "fixture",
+          "adapters": [
+            "rust-psbt-v2",
+            "libwally"
+          ],
+          "expected": {
+            "lab": "accepted",
+            "rust-psbt-v2": "accepted",
+            "libwally": "accepted"
+          }
+        }
+      ]
+    },
+    {
+      "id": "parse-workflow-14",
+      "title": "workflow-14",
+      "fixture": "workflow-14",
+      "steps": [
+        {
+          "id": "compare",
+          "operation": "compare-parsers",
+          "input": "fixture",
+          "adapters": [
+            "rust-psbt-v2",
+            "libwally"
+          ],
+          "expected": {
+            "lab": "accepted",
+            "rust-psbt-v2": "accepted",
+            "libwally": "accepted"
+          }
+        }
+      ]
+    },
+    {
+      "id": "parse-workflow-15",
+      "title": "workflow-15",
+      "fixture": "workflow-15",
+      "steps": [
+        {
+          "id": "compare",
+          "operation": "compare-parsers",
+          "input": "fixture",
+          "adapters": [
+            "rust-psbt-v2",
+            "libwally"
+          ],
+          "expected": {
+            "lab": "accepted",
+            "rust-psbt-v2": "accepted",
+            "libwally": "accepted"
+          }
+        }
+      ]
+    },
+    {
+      "id": "parse-workflow-16",
+      "title": "workflow-16",
+      "fixture": "workflow-16",
+      "steps": [
+        {
+          "id": "compare",
+          "operation": "compare-parsers",
+          "input": "fixture",
+          "adapters": [
+            "rust-psbt-v2",
+            "libwally"
+          ],
+          "expected": {
+            "lab": "accepted",
+            "rust-psbt-v2": "accepted",
+            "libwally": "accepted"
+          }
+        }
+      ]
+    }
+  ]
+}

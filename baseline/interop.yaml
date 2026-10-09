@@ -1,0 +1,29 @@
+# Primary profile: the BIP-375 line of every repo. Checkout revisions are pinned by
+# interop.lock. Live checkouts may move; `doctor` checks them before a run. See
+# ../docs/regression-plan.md.
+artifact_root: ../artifacts
+allow_dirty: false
+# BIP-375 line only; MuSig2-SP scenarios are judged by ../baseline-musig2.
+suites: [bip375]
+checkouts:
+  silent-pay:
+    path: ~/work/interop/baseline/silent-pay
+    revision: null
+  coldcard:
+    path: ~/work/interop/baseline/coldcard-firmware
+    revision: null
+  jade:
+    path: ~/work/interop/baseline/Jade
+    revision: null
+  seedsigner:
+    path: ~/work/interop/baseline/seedsigner
+    revision: null
+  caravan:
+    path: ~/work/interop/baseline/caravan
+    revision: null
+  spdk:
+    path: ~/work/interop/baseline/spdk
+    revision: null
+  embit:
+    path: ~/work/interop/baseline/embit
+    revision: null

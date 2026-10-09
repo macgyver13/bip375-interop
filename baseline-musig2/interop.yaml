@@ -1,0 +1,29 @@
+# MuSig2 profile. Checkout revisions are pinned independently of ../baseline/interop.yaml;
+# coldcard and jade use their MuSig2 lines. MuSig2 work must not regress BIP-375, so
+# this profile shares the primary profile's expectations.yaml (symlink) and runs the same
+# `check`, plus the two MuSig2-SP regtest legs:
+#   CONFIG=baseline-musig2/interop.yaml just musig2-regtest aggregate-then-derive
+artifact_root: ../artifacts
+allow_dirty: false
+checkouts:
+  silent-pay:
+    path: ~/work/interop/baseline-musig2/silent-pay
+    revision: null
+  coldcard:
+    path: ~/work/interop/baseline-musig2/coldcard-firmware
+    revision: null
+  jade:
+    path: ~/work/interop/baseline-musig2/Jade
+    revision: null
+  seedsigner:
+    path: ~/work/interop/baseline-musig2/seedsigner
+    revision: null
+  caravan:
+    path: ~/work/interop/baseline-musig2/caravan
+    revision: null
+  spdk:
+    path: ~/work/interop/baseline-musig2/spdk
+    revision: null
+  embit:
+    path: ~/work/interop/baseline-musig2/embit
+    revision: null

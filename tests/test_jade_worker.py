@@ -1,0 +1,277 @@
+from __future__ import annotations
+
+import base64
+import subprocess
+from pathlib import Path
+
+from bip375_interop.jade_worker import JadeWorker
+
+
+class FakeQemu:
+    def __init__(self) -> None:
+        self.terminated = False
+
+    def poll(self):
+        return None
+
+    def terminate(self) -> None:
+        self.terminated = True
+
+    def wait(self, timeout: float) -> None:
+        return None
+
+
+class FakeJade:
+    def __init__(self) -> None:
+        self.connected = False
+        self.disconnected = False
+        self.mnemonic: tuple[str, bool] | None = None
+        self.calls: list[tuple[str, bytes]] = []
+        self.registered_descriptors: list[tuple[str, str, str, dict]] = []
+
+    def connect(self) -> None:
+        self.connected = True
+
+    def disconnect(self) -> None:
+        self.disconnected = True
+
+    def get_version_info(self) -> dict[str, str]:
+        return {"version": "test"}
+
+    def set_mnemonic(self, mnemonic: str, temporary_wallet: bool) -> None:
+        self.mnemonic = (mnemonic, temporary_wallet)
+
+    def sign_psbt(self, network: str, psbt: bytes) -> bytes:
+        self.calls.append((network, psbt))
+        return psbt + b"-jade"
+
+    def register_descriptor(
+        self, network: str, descriptor_name: str, descriptor_script: str, datavalues: dict
+    ) -> bool:
+        self.registered_descriptors.append((network, descriptor_name, descriptor_script, datavalues))
+        return True
+
+
+def test_jade_worker_keeps_one_seeded_connection_and_maps_regtest() -> None:
+    jade = FakeJade()
+    worker = JadeWorker(
+        environ={"BIP375_JADE_ENDPOINT": "tcp:127.0.0.1:30121"},
+        api_factory=lambda **_kwargs: jade,
+    )
+    request = {
+        "suite": "bip375",
+        "mnemonic": "published test mnemonic",
+        "network": "regtest",
+        "psbt": base64.b64encode(b"psbt\xfffixture").decode(),
+    }
+
+    first = worker.process(request)
+    second = worker.process(request)
+
+    assert jade.connected
+    assert jade.mnemonic == ("published test mnemonic", True)
+    assert jade.calls == [
+        ("localtest", b"psbt\xfffixture"),
+        ("localtest", b"psbt\xfffixture"),
+    ]
+    assert base64.b64decode(first["psbt"]) == b"psbt\xfffixture-jade"
+    assert base64.b64decode(second["psbt"]) == b"psbt\xfffixture-jade"
+    worker.close()
+    assert jade.disconnected
+
+
+def test_jade_worker_registers_descriptor_once_for_musig2_sp() -> None:
+    jade = FakeJade()
+    worker = JadeWorker(
+        environ={"BIP375_JADE_ENDPOINT": "tcp:127.0.0.1:30121"},
+        api_factory=lambda **_kwargs: jade,
+    )
+    request = {
+        "suite": "musig2-sp",
+        "mnemonic": "published test mnemonic",
+        "network": "regtest",
+        "descriptor": "tr(musig(...)/<0;1>/*)",
+        "psbt": base64.b64encode(b"psbt\xfffixture").decode(),
+    }
+
+    worker.process(request)
+    worker.process(request)
+
+    assert jade.registered_descriptors == [
+        ("localtest", "bip375-interop", "tr(musig(...)/<0;1>/*)", {}),
+    ]
+    assert jade.calls == [
+        ("localtest", b"psbt\xfffixture"),
+        ("localtest", b"psbt\xfffixture"),
+    ]
+
+
+def test_jade_worker_signs_signet_as_testnet() -> None:
+    jade = FakeJade()
+    worker = JadeWorker(
+        environ={"BIP375_JADE_ENDPOINT": "tcp:127.0.0.1:30121"},
+        api_factory=lambda **_kwargs: jade,
+    )
+    request = {
+        "suite": "musig2-sp",
+        "mnemonic": "published test mnemonic",
+        "network": "signet",
+        "descriptor": "tr(musig(...))",
+        "psbt": base64.b64encode(b"psbt\xfffixture").decode(),
+    }
+
+    worker.process(request)
+
+    assert jade.registered_descriptors == [
+        ("testnet", "bip375-interop", "tr(musig(...))", {}),
+    ]
+    assert jade.calls == [("testnet", b"psbt\xfffixture")]
+
+
+def test_jade_worker_rejects_a_second_signer_seed() -> None:
+    worker = JadeWorker(
+        environ={"BIP375_JADE_ENDPOINT": "tcp:127.0.0.1:30121"},
+        api_factory=lambda **_kwargs: FakeJade(),
+    )
+    request = {
+        "suite": "bip375",
+        "mnemonic": "first published mnemonic",
+        "psbt": base64.b64encode(b"psbt\xfffixture").decode(),
+    }
+    worker.process(request)
+    request["mnemonic"] = "second published mnemonic"
+
+    try:
+        worker.process(request)
+    except Exception as exc:
+        assert str(exc) == "a persistent Jade worker cannot change mnemonic"
+    else:
+        raise AssertionError("second mnemonic was accepted")
+
+
+def test_jade_worker_starts_and_stops_native_qemu(tmp_path: Path) -> None:
+    checkout = tmp_path / "jade"
+    (checkout / "build").mkdir(parents=True)
+    (checkout / "build" / "flash_image.bin").touch()
+    (checkout / "build" / "qemu_efuse.bin").touch()
+    qemu = FakeQemu()
+    observed = {}
+
+    def process_factory(argv, **kwargs):
+        observed["argv"] = argv
+        observed["cwd"] = kwargs["cwd"]
+        return qemu
+
+    worker = JadeWorker(
+        environ={
+            "BIP375_JADE_CHECKOUT": str(checkout),
+            "BIP375_JADE_QEMU": "/tools/qemu-system-xtensa",
+        },
+        process_factory=process_factory,
+    )
+
+    endpoint = worker._start_qemu()
+
+    assert endpoint.startswith("tcp:127.0.0.1:")
+    assert observed["argv"][0] == "/tools/qemu-system-xtensa"
+    assert any(argument.startswith("user,model=open_eth") for argument in observed["argv"])
+    assert observed["cwd"] == checkout
+    worker.close()
+    assert qemu.terminated
+
+
+def test_jade_worker_redirects_qemu_io_to_instance_dir(tmp_path: Path) -> None:
+    checkout = tmp_path / "jade"
+    (checkout / "build").mkdir(parents=True)
+    (checkout / "build" / "flash_image.bin").touch()
+    (checkout / "build" / "qemu_efuse.bin").touch()
+    instance_dir = tmp_path / "instance"
+    qemu = FakeQemu()
+    observed = {}
+
+    def process_factory(argv, **kwargs):
+        observed.update(kwargs)
+        return qemu
+
+    worker = JadeWorker(
+        environ={
+            "BIP375_JADE_CHECKOUT": str(checkout),
+            "BIP375_JADE_QEMU": "/tools/qemu-system-xtensa",
+            "BIP375_WORKER_INSTANCE_DIR": str(instance_dir),
+        },
+        process_factory=process_factory,
+    )
+
+    worker._start_qemu()
+
+    assert observed["stdout"] not in (subprocess.DEVNULL, None)
+    assert observed["stderr"] not in (subprocess.DEVNULL, None)
+    assert (instance_dir / "qemu.stdout.log").is_file()
+    assert (instance_dir / "qemu.stderr.log").is_file()
+    worker.close()
+
+
+def test_qemu_is_found_under_idf_tools_path(tmp_path, monkeypatch):
+    from bip375_interop.jade_worker import _qemu_executable
+
+    monkeypatch.setattr("shutil.which", lambda name: None)
+    for version in ("esp_develop_9.0.0_20240606", "esp_develop_9.2.2_20250817"):
+        binary = tmp_path / "tools" / "qemu-xtensa" / version / "qemu" / "bin" / "qemu-system-xtensa"
+        binary.parent.mkdir(parents=True)
+        binary.touch()
+
+    found = _qemu_executable({"IDF_TOOLS_PATH": str(tmp_path)})
+
+    assert found == str(binary)
+
+
+def test_jade_worker_stops_waiting_when_qemu_exits(tmp_path: Path) -> None:
+    import pytest
+
+    from bip375_interop.signer_worker import WorkerRequestError
+
+    class ExitedQemu(FakeQemu):
+        returncode = 1
+
+        def poll(self):
+            return 1
+
+    class Unreachable(FakeJade):
+        def connect(self) -> None:
+            raise ConnectionRefusedError("no listener")
+
+    checkout = tmp_path / "jade"
+    (checkout / "build").mkdir(parents=True)
+    (checkout / "build" / "flash_image.bin").touch()
+    (checkout / "build" / "qemu_efuse.bin").touch()
+    sleeps = []
+    worker = JadeWorker(
+        environ={"BIP375_JADE_CHECKOUT": str(checkout), "BIP375_JADE_QEMU": "/tools/qemu"},
+        api_factory=lambda **_kwargs: Unreachable(),
+        process_factory=lambda argv, **kwargs: ExitedQemu(),
+        sleeper=sleeps.append,
+    )
+    with pytest.raises(WorkerRequestError, match="exited"):
+        worker._open("published test mnemonic")
+    assert len(sleeps) <= 1
+
+
+def test_jade_worker_refuses_a_rejected_descriptor() -> None:
+    import pytest
+
+    from bip375_interop.signer_worker import WorkerRequestError
+
+    class Refusing(FakeJade):
+        def register_descriptor(self, *args) -> bool:
+            return False
+
+    worker = JadeWorker(
+        environ={"BIP375_JADE_ENDPOINT": "tcp:127.0.0.1:30121"},
+        api_factory=lambda **_kwargs: Refusing(),
+    )
+    with pytest.raises(WorkerRequestError, match="rejected"):
+        worker.process({
+            "suite": "musig2-sp", "mnemonic": "published test mnemonic",
+            "network": "regtest", "descriptor": "tr(musig(...)/<0;1>/*)",
+            "psbt": base64.b64encode(b"psbt").decode(),
+        })

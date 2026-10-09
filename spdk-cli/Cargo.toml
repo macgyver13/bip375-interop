@@ -1,0 +1,21 @@
+[package]
+name = "spdk-cli"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "spdk-cli"
+path = "src/main.rs"
+
+[dependencies]
+# Pinned to the spdk commit the baseline pins the "spdk" checkout to. That is
+# silent-pay's spdk commit (5c8a3823) plus a rust-psbt bump whose finalizer
+# accepts SIGHASH_DEFAULT on taproot inputs, so the validator and the MuSig2-SP
+# legs check PSBTs with the same SP code. This crate is the harness's own wrapper; the
+# cryptography stays in spdk, same split as caravan_validate.cjs (in-repo
+# script) vs. Caravan's checkout. spdk pins rust-psbt by rev itself, and
+# Cargo.lock (committed) fixes the rest.
+psbt = { git = "https://github.com/macgyver13/spdk.git", rev = "7df4615a63d87b1f6fab43390c92d2cbbad1a31a" }
+psbt-v2 = { git = "https://gitea.bitcoin.ninja/macgyver/rust-psbt.git", rev = "b1728695eedf84060000b693b464630ec95c920c", features = ["miniscript"] }
+secp256k1 = "0.29.0"
+serde_json = "1.0.107"

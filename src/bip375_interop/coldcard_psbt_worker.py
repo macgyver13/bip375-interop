@@ -1,0 +1,329 @@
+"""Persistent Coldcard simulator worker for externally supplied BIP-375 PSBTs."""
+
+from __future__ import annotations
+
+import argparse
+import base64
+import importlib
+import json
+import os
+import subprocess
+import sys
+import time
+from collections.abc import Callable, Mapping
+from pathlib import Path
+from typing import Any, TextIO
+
+from .signer_worker import RuntimeCapabilities, WorkerRequestError, _required_string
+
+
+class ColdcardPsbtWorker:
+    """Own one isolated Coldcard simulator and its signer state."""
+
+    backend = "coldcard"
+
+    def __init__(
+        self,
+        *,
+        environ: Mapping[str, str] | None = None,
+        device_factory: Callable[..., Any] | None = None,
+        packer: Any | None = None,
+        process_factory: Callable[..., subprocess.Popen[bytes]] = subprocess.Popen,
+        sleeper: Callable[[float], None] = time.sleep,
+    ) -> None:
+        self._environ = dict(os.environ if environ is None else environ)
+        self._device_factory = device_factory
+        self._packer = packer
+        self._process_factory = process_factory
+        self._sleep = sleeper
+        self._simulator: subprocess.Popen[bytes] | None = None
+        self._simulator_stdout: Any | None = None
+        self._simulator_stderr: Any | None = None
+        self._device: Any | None = None
+        self._mnemonic: str | None = None
+        self._seed_script: Path | None = None
+        self._enrolled_descriptor: str | None = None
+        self._load_error: str | None = None
+        if self._device_factory is None:
+            try:
+                self._device_factory = importlib.import_module("ckcc.client").ColdcardDevice
+            except (ImportError, AttributeError) as exc:
+                self._load_error = str(exc)
+
+    def capabilities(self) -> RuntimeCapabilities:
+        return RuntimeCapabilities(
+            backend=self.backend,
+            plain_bip375=self._device_factory is not None,
+            musig2_sp=self._device_factory is not None,
+            persistent=True,
+            unavailable_reason=self._load_error,
+        )
+
+    def process(self, request: Mapping[str, Any]) -> dict[str, Any]:
+        if self._device_factory is None:
+            raise WorkerRequestError(
+                "unsupported", self._load_error or "Coldcard runtime is unavailable"
+            )
+        suite = _required_string(request, "suite")
+        if suite not in {"bip375", "musig2-sp"}:
+            raise WorkerRequestError("unsupported", "Coldcard worker supports BIP-375 only")
+        # The simulator always runs on testnet (set_seed.py hard-codes chain=XTN);
+        # any requested network is accepted but has no effect on the simulator's chain.
+        mnemonic = _required_string(request, "mnemonic")
+        psbt = _decode_psbt(request)
+        device = self._open(mnemonic)
+        if suite == "musig2-sp":
+            descriptor = _required_string(request, "descriptor")
+            self._enroll_descriptor(device, descriptor)
+        title = body = None
+        try:
+            length, digest = device.upload_file(psbt)
+            packer = self._protocol_packer()
+            device.send_recv(packer.sign_transaction(length, digest, False))
+            title, body = self._capture_story(device)
+            device.send_recv(packer.sim_keypress(b"y"), timeout=None)
+            signed = self._download_signed_psbt(device, packer)
+            device.send_recv(packer.sim_keypress(b"x"), timeout=None)
+        except Exception as exc:
+            raise WorkerRequestError(
+                "coldcard_signing_failed", self._failure_message(device, exc, (title, body))
+            ) from exc
+        return {
+            "psbt": base64.b64encode(signed).decode("ascii"),
+            "stage": "device-processed",
+            "story": {"title": title, "body": body},
+        }
+
+    def close(self) -> None:
+        if self._simulator is not None:
+            if self._simulator.poll() is None:
+                self._simulator.terminate()
+                try:
+                    self._simulator.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    self._simulator.kill()
+                    self._simulator.wait()
+            self._simulator = None
+        for stream in (self._simulator_stdout, self._simulator_stderr):
+            if stream is not None:
+                stream.close()
+        self._simulator_stdout = None
+        self._simulator_stderr = None
+        self._device = None
+        # A new simulator starts unseeded and with nothing enrolled.
+        self._mnemonic = None
+        self._enrolled_descriptor = None
+
+    def _open(self, mnemonic: str) -> Any:
+        if self._device is None:
+            self._device = self._start_simulator()
+        if self._mnemonic is None:
+            try:
+                self._set_mnemonic(self._device, mnemonic)
+            except Exception as exc:
+                raise WorkerRequestError("coldcard_setup_failed", str(exc)) from exc
+            self._mnemonic = mnemonic
+        elif mnemonic != self._mnemonic:
+            raise WorkerRequestError(
+                "invalid_signer", "a persistent Coldcard worker cannot change mnemonic"
+            )
+        return self._device
+
+    def _enroll_descriptor(self, device: Any, descriptor: str) -> None:
+        if self._enrolled_descriptor == descriptor:
+            return
+        try:
+            config = json.dumps({"name": "bip375-interop", "desc": descriptor}).encode("ascii")
+            file_len, sha = device.upload_file(config)
+            packer = self._protocol_packer()
+            device.send_recv(packer.miniscript_enroll(file_len, sha))
+            device.send_recv(packer.sim_keypress(b"y"), timeout=None)
+        except Exception as exc:
+            raise WorkerRequestError("coldcard_setup_failed", str(exc)) from exc
+        self._enrolled_descriptor = descriptor
+
+    def _start_simulator(self) -> Any:
+        checkout = self._environ.get("BIP375_COLDCARD_CHECKOUT")
+        python = self._environ.get("BIP375_COLDCARD_PYTHON")
+        if not checkout or not python:
+            raise WorkerRequestError(
+                "coldcard_configuration_missing",
+                "BIP375_COLDCARD_CHECKOUT and BIP375_COLDCARD_PYTHON are required",
+            )
+        source = Path(checkout)
+        if not (source / "unix" / "simulator.py").is_file():
+            raise WorkerRequestError("coldcard_configuration_missing", "Coldcard simulator is missing")
+        self._seed_script = source / "testing" / "devtest" / "set_seed.py"
+        env = self._environ.copy()
+        env["PATH"] = str(Path(python).parent) + os.pathsep + env.get("PATH", "")
+        stdout_target: Any = subprocess.DEVNULL
+        stderr_target: Any = subprocess.DEVNULL
+        instance_dir = self._environ.get("BIP375_WORKER_INSTANCE_DIR")
+        if instance_dir:
+            log_dir = Path(instance_dir)
+            log_dir.mkdir(parents=True, exist_ok=True)
+            self._simulator_stdout = (log_dir / "simulator.stdout.log").open("wb")
+            self._simulator_stderr = (log_dir / "simulator.stderr.log").open("wb")
+            stdout_target = self._simulator_stdout
+            stderr_target = self._simulator_stderr
+        self._simulator = self._process_factory(
+            [python, "simulator.py", "--headless", "--segregate"],
+            cwd=source / "unix",
+            env=env,
+            stdin=subprocess.DEVNULL,
+            stdout=stdout_target,
+            stderr=stderr_target,
+        )
+        socket_path = Path(f"/tmp/ckcc-simulator-{self._simulator.pid}.sock")
+        deadline = time.monotonic() + float(
+            self._environ.get("BIP375_COLDCARD_STARTUP_SECONDS", "60")
+        )
+        error: Exception | None = None
+        while time.monotonic() < deadline:
+            if self._simulator.poll() is not None:
+                break
+            if socket_path.exists():
+                try:
+                    device = self._device_factory(sn=str(socket_path), is_simulator=True)
+                    device.send_recv(self._protocol_packer().version())
+                    return device
+                except Exception as exc:
+                    error = exc
+            self._sleep(0.1)
+        detail = f": {error}" if error is not None else ""
+        self.close()
+        raise WorkerRequestError("coldcard_unavailable", f"Coldcard simulator did not become ready{detail}")
+
+    def _protocol_packer(self) -> Any:
+        if self._packer is None:
+            self._packer = importlib.import_module("ckcc.protocol").CCProtocolPacker
+        return self._packer
+
+    def _set_mnemonic(self, device: Any, mnemonic: str) -> None:
+        words = mnemonic.split()
+        if not words:
+            raise ValueError("mnemonic must not be empty")
+        device.send_recv(
+            b"EXEC" + f"import main; main.WORDS = {words!r}".encode("utf-8"),
+            encrypt=False,
+        )
+        device.send_recv(
+            b"EXEC" + f"execfile({str(self._seed_script)!r})".encode("utf-8"),
+            encrypt=False,
+            timeout=None,
+        )
+        device.start_encryption()
+        device.check_mitm()
+
+    @staticmethod
+    def _capture_story(device: Any) -> tuple[str, str]:
+        """Read the simulator's on-screen story before approving it blindly.
+
+        Mirrors ``_cap_story`` in coldcard-firmware/testing/core_fixtures.py,
+        using the same unencrypted EXEC channel ``_set_mnemonic`` uses.
+        """
+        chunks: list[bytes] = []
+        offset = 0
+        while True:
+            command = (
+                "data = '\\0'.join(sim_display.story or []).encode(); "
+                f"RV.write(data[{offset}:{offset + 2048}])"
+            )
+            chunk = device.send_recv(b"EXEC" + command.encode("utf-8"), encrypt=False)
+            chunks.append(chunk)
+            if len(chunk) < 2048:
+                break
+            offset += 2048
+        raw = b"".join(chunks).decode()
+        if not raw:
+            return "", ""
+        title, _, body = raw.partition("\0")
+        return title, body
+
+    @classmethod
+    def _failure_message(cls, device: Any, exc: Exception, approval: tuple) -> str:
+        """The USB error, plus the failure story when the screen shows one.
+
+        Coldcard reports only a short message over USB ("PSBT output failed");
+        the exception text and file:line behind it are on the screen.
+        """
+        try:
+            story = cls._capture_story(device)
+        except Exception:
+            return str(exc)
+        if story == approval or not story[1]:
+            return str(exc)
+        return f"{exc} (screen: {' '.join(story[1].split())})"
+
+    @staticmethod
+    def _download_signed_psbt(device: Any, packer: Any) -> bytes:
+        done = device.send_recv(packer.get_signed_txn(), timeout=None)
+        while done is None:
+            done = device.send_recv(packer.get_signed_txn(), timeout=None)
+        if not isinstance(done, tuple) or len(done) != 2:
+            raise ValueError("Coldcard did not return a signed PSBT")
+        length, digest = done
+        return bytes(device.download_file(length, digest))
+
+
+def _decode_psbt(request: Mapping[str, Any]) -> bytes:
+    encoded = _required_string(request, "psbt")
+    try:
+        psbt = base64.b64decode(encoded, validate=True)
+    except ValueError as exc:
+        raise WorkerRequestError("invalid_request", "psbt must be base64") from exc
+    if not psbt.startswith(b"psbt\xff"):
+        raise WorkerRequestError("invalid_request", "psbt payload is invalid")
+    return psbt
+
+
+def handle_request(worker: ColdcardPsbtWorker, request: Mapping[str, Any]) -> dict[str, Any]:
+    request_id = request.get("id")
+    try:
+        if request.get("op") == "capabilities":
+            result = worker.capabilities().as_dict()
+        elif request.get("op") == "process_psbt":
+            result = worker.process(request)
+        else:
+            raise WorkerRequestError("invalid_request", "unknown worker operation")
+        return {"id": request_id, "ok": True, "result": result}
+    except WorkerRequestError as exc:
+        return {
+            "id": request_id,
+            "ok": False,
+            "error": {"code": exc.code, "message": str(exc)},
+        }
+    except Exception as exc:
+        return {
+            "id": request_id,
+            "ok": False,
+            "error": {"code": "processing_error", "message": str(exc)},
+        }
+
+
+def serve(worker: ColdcardPsbtWorker, input_stream: TextIO, output_stream: TextIO) -> None:
+    try:
+        for line in input_stream:
+            try:
+                request = json.loads(line)
+                response = handle_request(worker, request)
+            except json.JSONDecodeError as exc:
+                response = {
+                    "id": None,
+                    "ok": False,
+                    "error": {"code": "invalid_json", "message": str(exc)},
+                }
+            output_stream.write(json.dumps(response, separators=(",", ":")) + "\n")
+            output_stream.flush()
+    finally:
+        worker.close()
+
+
+def main(argv: list[str] | None = None) -> int:
+    argparse.ArgumentParser(prog="bip375-coldcard-worker").parse_args(argv)
+    serve(ColdcardPsbtWorker(), sys.stdin, sys.stdout)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
