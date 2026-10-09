@@ -23,7 +23,7 @@ const COMPARISON_BASELINES: [(&str, &str); 2] = [
     ("BIP-375 baseline", "baseline/interop.lock"),
     ("BIP-375 + MuSig2 baseline", "baseline-musig2/interop.lock"),
 ];
-const PROJECTS: [&str; 7] = [
+const PROJECTS: [&str; 8] = [
     "harness",
     "coldcard",
     "jade",
@@ -31,6 +31,7 @@ const PROJECTS: [&str; 7] = [
     "bitsaga-seedsigner",
     "caravan",
     "spdk",
+    "btclib",
 ];
 
 #[derive(Clone, Copy, PartialEq)]
@@ -711,7 +712,7 @@ impl eframe::App for App {
             ui.checkbox(&mut self.allow_dirty, "Include uncommitted checkout changes (result is not reproducible)");
             });
             ui.label(if (self.profile == 1 || self.profile == 4) && self.project == 0 {
-                "Full verification runs BIP-375/BIP-376 with Caravan, SPDK, and Interop Lab, then both MuSig2 regtest legs."
+                "Full verification runs BIP-375/BIP-376 with Caravan, SPDK, btclib, and Interop Lab, then both MuSig2 regtest legs."
             } else {
                 "This selection runs matching scenarios with independent validators. Use the MuSig2 baseline and all code for the full gate."
             });
@@ -795,7 +796,7 @@ impl eframe::App for App {
                     let lab_skipped = self.report.as_ref().and_then(|report| report["results"].as_array())
                         .map_or(0, |results| results.iter().filter(|case| case["reason"] == "interop-lab-skipped").count());
                     if lab_skipped > 0 {
-                        ui.label(format!("{lab_skipped} completed cases passed Caravan and SPDK; only Interop Lab is missing, which the release check runs."));
+                        ui.label(format!("{lab_skipped} completed cases passed Caravan, SPDK and btclib; only Interop Lab is missing, which the release check runs."));
                     }
                     if let Some(results) = self.report.as_ref().and_then(|report| report["results"].as_array()) {
                         for (prefix, title) in [("bip375-", "BIP-375"), ("bip376-", "BIP-376"), ("musig2-sp-", "MuSig2 + Silent Payments")] {

@@ -22,3 +22,6 @@ checkouts:
   embit:
     path: ~/src/embit
     revision: null
+  btclib:
+    path: ~/src/btclib-wallet
+    revision: null

@@ -8,6 +8,7 @@ from bip375_interop.adapters.base import (
     SignerIdentity,
 )
 from bip375_interop.adapters.bitsaga import BitSagaAdapter
+from bip375_interop.adapters.btclib import BtclibAdapter
 from bip375_interop.adapters.caravan import CaravanAdapter
 from bip375_interop.adapters.coldcard import ColdcardAdapter
 from bip375_interop.adapters.jade import JadeAdapter
@@ -17,6 +18,7 @@ from bip375_interop.adapters.spdk import SpdkAdapter
 __all__ = [
     "AdapterCapabilities",
     "BitSagaAdapter",
+    "BtclibAdapter",
     "CaravanAdapter",
     "ColdcardAdapter",
     "CommandPlan",

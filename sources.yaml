@@ -34,3 +34,4 @@ seedsigner: https://github.com/macgyver13/seedsigner.git
 caravan: https://github.com/jvgelder/caravan.git
 spdk: https://github.com/macgyver13/spdk.git
 embit: https://github.com/macgyver13/embit.git
+btclib: https://github.com/btclib-org/btclib-wallet.git

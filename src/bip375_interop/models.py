@@ -9,7 +9,7 @@ from .errors import ConfigurationError
 
 # Independent implementations that re-check a run's PSBTs without signing.
 # Opt-in per scenario, ``check --exhaustive``, or the ``check --release`` profile.
-KNOWN_VALIDATORS = ("caravan", "spdk")
+KNOWN_VALIDATORS = ("caravan", "spdk", "btclib")
 
 
 @dataclass(frozen=True)

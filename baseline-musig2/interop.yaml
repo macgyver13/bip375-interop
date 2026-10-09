@@ -27,3 +27,6 @@ checkouts:
   embit:
     path: ~/work/interop/baseline-musig2/embit
     revision: null
+  btclib:
+    path: ~/work/interop/baseline-musig2/btclib-wallet
+    revision: null

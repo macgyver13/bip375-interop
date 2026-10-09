@@ -41,6 +41,7 @@ Per-backend prerequisites (full list in [docs/runbook.md](docs/runbook.md#prereq
 | seedsigner | `pip install -r <seedsigner>/requirements.txt` into `.venv` |
 | caravan | `npm ci && npx turbo build --filter=@caravan/psbt...` in the checkout |
 | spdk | `cargo build --release` in this repo's `spdk-cli/` |
+| btclib | `bip375-interop build btclib` (a venv inside the btclib-wallet checkout) |
 | silent-pay | `cargo`, plus `bitcoind` and `bitcoin-cli` for the MuSig2-SP regtest legs |
 
 ## Regression testing

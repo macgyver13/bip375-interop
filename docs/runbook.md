@@ -173,10 +173,16 @@ bip375-interop --config baseline-musig2/interop.yaml pin
 | `bip375-coldcard-two-way` | bip375 | coldcard x2 | **Working** (same-backend) |
 | `bip375-three-way` | bip375 | coldcard, jade, seedsigner | Blocked at `seedsigner-c` (see below); `coldcard-a`/`jade-b` contribute cleanly |
 | `bip375-coldcard-jade-three-way` | bip375 | coldcard, jade, coldcard | **Working**: the three-way flow with a second Coldcard in place of SeedSigner (see below) |
-| `bip375-coldcard-jade-two-way-taproot-sighash-default` | bip375 | coldcard, jade | **Working**: SIGHASH_DEFAULT on a taproot input, accepted by both devices and both validators (see below) |
+| `bip375-coldcard-jade-two-way-taproot-sighash-default` | bip375 | coldcard, jade | **Finding**: SIGHASH_DEFAULT on a taproot input, accepted by both devices, Caravan and SPDK, rejected by btclib (see below) |
 | `bip375-coldcard-jade-two-way-redundant-sign` | bip375 | coldcard, jade | **Working**: both devices return a fully signed PSBT unchanged (see below) |
 | `bip375-caravan-coldcard-jade-two-way` | bip375 | coldcard, jade | **Working** (also validated by the `caravan` validator, see below) |
 | `bip375-spdk-coldcard-jade-two-way` | bip375 | coldcard, jade | **Working** (also validated by the `spdk` validator, see below) |
+| `bip375-btclib-coldcard-jade-two-way` | bip375 | coldcard, jade | **Working** (also validated by the `btclib` validator, see below) |
+| `bip375-btclib-single` | bip375 | btclib | **Working** (btclib-wallet as signer, see below) |
+| `bip375-btclib-single-taproot` | bip375 | btclib | **Working** (P2TR key-path input) |
+| `bip375-coldcard-btclib-two-way` | bip375 | coldcard, btclib | **Working**: btclib-wallet resolves the output |
+| `bip375-btclib-jade-two-way` | bip375 | btclib, jade | **Working**: btclib-wallet contributes, Jade resolves |
+| `bip375-coldcard-jade-btclib-three-way` | bip375 | coldcard, jade, btclib | **Working**: btclib-wallet resolves after both devices |
 | `bip375-seedsigner-jade-two-way` | bip375 | seedsigner, jade | Blocked (SeedSigner cannot co-own a plain BIP-375 send, see below) |
 | `bip375-seedsigner-coldcard-two-way` | bip375 | seedsigner, coldcard | Blocked, same root cause, confirmed against a second backend |
 | `bip376-coldcard-sp-spend-single` | bip375 (BIP-376) | coldcard | **Working** (spends its own previously-received SP UTXO) |
@@ -336,7 +342,7 @@ bip375-interop run-generated scenarios/bip375-coldcard-jade-three-way.yaml
 `coldcard-a` and `jade-b` contribute their shares, `coldcard-c` resolves the output and
 signs its input, then `coldcard-a` and `jade-b` sign theirs.
 
-### `bip375-coldcard-jade-two-way-taproot-sighash-default`: working
+### `bip375-coldcard-jade-two-way-taproot-sighash-default`: finding (btclib)
 
 `coldcard-a`'s input 0 is generated with `sighash: default` (see `fixtures.py`), an
 explicit PSBT_IN_SIGHASH_TYPE of 0 on a P2TR input:
@@ -361,6 +367,10 @@ test Jade signing its own SIGHASH_DEFAULT input:
   `check_partial_sigs_sighash_type` converted every input's sighash to an ECDSA type,
   and 0 is not one. Fixed in rust-psbt `fix/taproot-default-sighash-finalize`
   (2a0cb75a), which spdk f93de4da and `spdk-cli` now pin.
+- btclib-wallet (v2026.10.9) rejects the final PSBT at `extract_tx` with `input 0: sig
+  hash type 0, where a psbt with a silent payment output requires SIGHASH_ALL`, the rule
+  before BIP-375 0.1.4. The scenario opts into the `btclib` validator so every run records
+  it, and `expectations.yaml` marks it a `finding` until btclib follows 0.1.4.
 
 ### `bip375-coldcard-jade-two-way-redundant-sign`: working
 
@@ -378,16 +388,16 @@ check. For a PSBT with SP outputs, Coldcard now skips that refusal, still verifi
 ECDH shares, DLEQ proofs and output scripts, and signs nothing (`sp-core-pinned`
 733fe43b). A PSBT without SP outputs keeps the upstream refusal.
 
-## Validators (caravan, spdk)
+## Validators (caravan, spdk, btclib)
 
 Independent implementations that never sign and never join a round -- they re-check a
 run's own PSBT snapshots after the real signers are done. A scenario opts in with
-`validators: [caravan]` / `validators: [spdk]` (or both). `check --exhaustive` and
+`validators: [caravan]`, `[spdk]` or `[btclib]` (or any combination). `check --exhaustive` and
 `check --release` force every `bip375`-suite scenario to run with all of
 `KNOWN_VALIDATORS` (`src/bip375_interop/models.py`) regardless of what it declares.
 `check --release` also runs both MuSig2 regtest architectures and fails unless each
-script prints `PASS`. A missing Caravan dist or `spdk-cli` binary is a preflight
-error, not a skipped validator. Opt-in scenarios are the two dedicated cases below.
+script prints `PASS`. A missing Caravan dist, `spdk-cli` binary or btclib venv is a
+preflight error, not a skipped validator. Opt-in scenarios are the dedicated cases below.
 
 ### Interop Lab release stage
 
@@ -479,6 +489,44 @@ it does not rebuild it from `tap_key_sig`. This still verifies the extracted spe
 but a negative test that changes only `tap_key_sig` does not change the spend being
 verified. The upstream embit behavior should be corrected; Jade and Coldcard do not
 need to read final witnesses to address it.
+
+### `bip375-btclib-coldcard-jade-two-way` -- working
+
+btclib-wallet (`btclib` checkout, github.com/btclib-org/btclib-wallet) is a pure-Python
+wallet library with its own PSBTv2 parser, Finalizer and Extractor, sharing no code with
+embit, rust-psbt or Caravan. `src/bip375_interop/btclib_validate.py` runs `finalize`,
+then `extract_tx`, which verifies the scripts and runs BIP-375's Extractor checks: share
+coverage, DLEQ proofs, input eligibility, and every silent payment output script
+recomputed from the ECDH shares. Like spdk it needs a fully signed PSBT, so it only checks
+`final.psbt`, and only on `bip375` scenarios (not MuSig2).
+
+```bash
+bip375-interop run-generated scenarios/bip375-btclib-coldcard-jade-two-way.yaml
+```
+
+`bip375-interop build btclib` creates a venv inside the checkout (`.venv`, which
+btclib-wallet's `.gitignore` covers) and installs btclib-wallet editable with its
+`secp256k1` extra, so it stays out of the harness's `.venv`. Its `btclib` dependency
+resolves from PyPI at or above btclib-wallet's floor.
+
+### btclib-wallet as a signer (`backend: btclib`)
+
+The same checkout also signs, plain BIP-375 sends only (no MuSig2-SP, no BIP-376 spends:
+btclib-wallet has no BIP-376 support). `signer_worker.BtclibWorker` runs in btclib's venv
+as a persistent worker like SeedSigner's. btclib's `sign` does not write ECDH shares, so
+per phase the worker does what a device does:
+
+- `contribute`: an ECDH share and DLEQ proof (`set_input_share`) for each input it owns.
+- `resolve-sign`: its own shares, or one global share (`set_global_share`) when it owns
+  every eligible input, then `set_output_scripts`, then signatures.
+- `sign`: signatures only, through btclib's `SoftwareSigner`.
+
+An input is owned when its BIP-32 origin names this seed's fingerprint and the path
+derives to the input's key. A taproot input's share uses the tweaked output key, negated
+when its point has odd y, since BIP-352 counts the x-only key. The five `btclib`
+scenarios cover a single owner (P2WPKH and P2TR), btclib resolving after Coldcard and
+after Coldcard plus Jade, and btclib contributing before Jade resolves. All pass Caravan,
+SPDK and btclib validation.
 
 ## BIP-376 (Silent Payment spend) scenarios
 

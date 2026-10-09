@@ -8,7 +8,9 @@ import sys
 from pathlib import Path
 from typing import Iterable
 
-from .adapters import CaravanAdapter, ColdcardAdapter, JadeAdapter, SeedSignerAdapter, SpdkAdapter
+from .adapters import (
+    BtclibAdapter, CaravanAdapter, ColdcardAdapter, JadeAdapter, SeedSignerAdapter, SpdkAdapter,
+)
 from .adapters.base import CommandPlan, Runner, execute_plan
 from .errors import InteropError
 from .models import HarnessConfig
@@ -37,6 +39,7 @@ _PLANS = {
     "seedsigner": lambda path: SeedSignerAdapter(path).plan_build(),
     "caravan": lambda path: CaravanAdapter(path).plan_build(),
     "spdk": lambda path: SpdkAdapter(path).plan_build(),
+    "btclib": lambda path: BtclibAdapter(path).plan_build(),
     "silent-pay": _silent_pay,
     "embit": _embit,
 }
