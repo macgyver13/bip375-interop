@@ -761,7 +761,7 @@ def test_recorded_repair_is_not_a_pass(tmp_path: Path):
     repairs = [{
         "step": 2, "phase": "resolve-sign", "signer": "a", "field": "tx_modifiable",
     }]
-    assert check_case_status(scenario, generated=True) == "passed"
+    assert check_case_status(scenario, generated=True, repairs=repairs) == "completed"
     fields = _verification_fields(scenario, repairs)
     assert fields == {"verification_scope": "not-evidence", "reason": "combiner-repairs"}
     artifacts = ArtifactRun(tmp_path, scenario.name)
