@@ -71,7 +71,7 @@ class SpdkAdapter:
     def plan_validate(self, psbt_paths: Sequence[Path]) -> CommandPlan:
         return CommandPlan(
             "spdk-validate",
-            (str(self.binary), *(str(path) for path in psbt_paths)),
+            (str(self.binary), *(str(path.resolve()) for path in psbt_paths)),
             self.crate_dir,
         )
 

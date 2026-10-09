@@ -48,7 +48,7 @@ class CaravanAdapter:
     def plan_validate(self, psbt_paths: Sequence[Path]) -> CommandPlan:
         return CommandPlan(
             "caravan-validate",
-            ("node", str(_SCRIPT), str(self.dist), *(str(path) for path in psbt_paths)),
+            ("node", str(_SCRIPT), str(self.dist), *(str(path.resolve()) for path in psbt_paths)),
             self.checkout_dir,
         )
 
