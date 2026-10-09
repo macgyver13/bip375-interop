@@ -18,6 +18,11 @@ const PROFILES: [(&str, &str); 5] = [
     ),
 ];
 const SETUP_GUIDE: &str = "docs/runbook.md";
+const LIVE_PROFILE: usize = 2;
+const COMPARISON_BASELINES: [(&str, &str); 2] = [
+    ("BIP-375 baseline", "baseline/interop.lock"),
+    ("BIP-375 + MuSig2 baseline", "baseline-musig2/interop.lock"),
+];
 const PROJECTS: [&str; 7] = [
     "harness",
     "coldcard",
@@ -30,6 +35,7 @@ const PROJECTS: [&str; 7] = [
 
 #[derive(Clone, Copy, PartialEq)]
 enum Action {
+    Compare,
     Doctor,
     Fetch,
     Preview,
@@ -39,6 +45,7 @@ enum Action {
 }
 
 enum Event {
+    Comparison(Result<Value, String>),
     Progress(Value),
     Finished(Action, i32, String, String),
 }
@@ -61,6 +68,10 @@ struct App {
     summary: Option<Value>,
     pin_changes: Option<Value>,
     pin_reviewed: bool,
+    comparison_baseline: usize,
+    comparison: Option<Value>,
+    comparison_error: Option<String>,
+    reviewed_checkout: Option<String>,
 }
 
 impl App {
@@ -68,7 +79,7 @@ impl App {
         let (sender, receiver) = mpsc::channel();
         Self {
             root,
-            profile: 1,
+            profile: 0,
             project: 0,
             allow_dirty: false,
             running: None,
@@ -84,6 +95,10 @@ impl App {
             summary: None,
             pin_changes: None,
             pin_reviewed: false,
+            comparison_baseline: 0,
+            comparison: None,
+            comparison_error: None,
+            reviewed_checkout: None,
         }
     }
 
@@ -105,6 +120,7 @@ impl App {
         }
         self.running = Some(action);
         match action {
+            Action::Compare => self.comparison_error = None,
             Action::Doctor => self.doctor = None,
             Action::Fetch => {}
             Action::Preview => self.selection = None,
@@ -126,14 +142,30 @@ impl App {
         let config = PROFILES[self.profile].1.to_string();
         let project = PROJECTS[self.project].to_string();
         let allow_dirty = self.allow_dirty;
+        let baseline_lock = (self.profile == LIVE_PROFILE)
+            .then(|| COMPARISON_BASELINES[self.comparison_baseline].1.to_string());
         let sender = self.sender.clone();
         std::thread::spawn(move || {
+            if action == Action::Doctor && baseline_lock.is_some() {
+                let comparison = run_cli(
+                    &root, &config, &project, allow_dirty, Action::Compare,
+                    baseline_lock.as_deref(), sender.clone(),
+                ).and_then(|(code, stdout, stderr)| {
+                    if code == 0 {
+                        serde_json::from_str(&stdout).map_err(|error| error.to_string())
+                    } else {
+                        Err(stderr.trim().trim_start_matches("error: ").to_string())
+                    }
+                });
+                let _ = sender.send(Event::Comparison(comparison));
+            }
             let result = run_cli(
                 &root,
                 &config,
                 &project,
                 allow_dirty,
                 action,
+                baseline_lock.as_deref(),
                 sender.clone(),
             );
             let (code, stdout, stderr) = match result {
@@ -147,8 +179,21 @@ impl App {
     fn receive(&mut self) {
         while let Ok(event) = self.receiver.try_recv() {
             match event {
+                Event::Comparison(result) => match result {
+                    Ok(comparison) => self.set_comparison(comparison),
+                    Err(error) => {
+                        self.comparison = None;
+                        self.comparison_error = Some(error);
+                    }
+                },
                 Event::Progress(value) => {
                     let stage = value["stage"].as_str().unwrap_or("");
+                    if stage == "baseline-comparison" {
+                        if let Some(comparison) = value.get("comparison") {
+                            self.set_comparison(comparison.clone());
+                        }
+                        continue;
+                    }
                     let name = value["scenario"]
                         .as_str()
                         .or_else(|| value["architecture"].as_str())
@@ -202,9 +247,20 @@ impl App {
                     stderr.trim().trim_start_matches("error: ")
                 }
             );
+            if action == Action::Compare {
+                self.comparison = None;
+                self.comparison_error = Some(self.message.clone());
+            }
             return;
         }
+        if let Some(comparison) = parsed.as_ref().and_then(|value| value.get("baseline_comparison")) {
+            self.set_comparison(comparison.clone());
+        }
         match action {
+            Action::Compare => {
+                self.set_comparison(parsed.unwrap());
+                self.message = "Review live checkout differences from the selected baseline.".into();
+            }
             Action::Doctor => {
                 self.doctor = parsed;
                 self.message = "Checkout versions and cleanliness are shown below.".into();
@@ -217,6 +273,7 @@ impl App {
                 self.message = "Review the selected cases and blocked items before running.".into();
             }
             Action::Check => {
+                self.selection = None;
                 self.summary = parsed;
                 self.report = self
                     .summary
@@ -244,6 +301,200 @@ impl App {
             }
         }
     }
+
+    fn set_comparison(&mut self, comparison: Value) {
+        self.comparison = Some(comparison);
+        self.comparison_error = None;
+    }
+
+    fn checkout_status_ui(&self, ui: &mut egui::Ui) {
+        if self.profile == LIVE_PROFILE {
+            return;
+        }
+        if let Some(doctor) = &self.doctor {
+            ui.heading("Checkout status");
+            if let Some(items) = doctor.as_array() {
+                for item in items {
+                    ui.label(format!("{}: {}{}", item["name"].as_str().unwrap_or("?"),
+                        item["revision"].as_str().unwrap_or("?"),
+                        if item["dirty"] == true { " (uncommitted changes)" } else { "" }));
+                }
+            }
+        }
+    }
+
+    fn comparison_ui(&mut self, ui: &mut egui::Ui, missing_live_profile: bool) {
+        ui.heading("Live checkouts vs. baseline");
+        let ready = self.running.is_none() && !missing_live_profile;
+        ui.add_enabled_ui(self.running.is_none(), |ui| {
+            ui.horizontal_wrapped(|ui| {
+                ui.label("Compare with");
+                egui::ComboBox::from_id_salt("comparison-baseline")
+                    .selected_text(COMPARISON_BASELINES[self.comparison_baseline].0)
+                    .show_ui(ui, |ui| {
+                        for (index, (name, _)) in COMPARISON_BASELINES.iter().enumerate() {
+                            if ui.selectable_value(&mut self.comparison_baseline, index, *name).changed() {
+                                self.comparison = None;
+                                self.comparison_error = None;
+                                self.reviewed_checkout = None;
+                            }
+                        }
+                    });
+                if ui.add_enabled(ready, egui::Button::new("Compare with baseline")).clicked() {
+                    self.start(Action::Compare);
+                }
+            });
+        });
+        ui.small("Comparison uses live checkout paths. The run's scenarios and expectations still come from Live development.");
+        if let Some(error) = &self.comparison_error {
+            ui.colored_label(egui::Color32::YELLOW, error);
+        }
+        if let Some(comparison) = &self.comparison {
+            if let Some(rows) = comparison["checkouts"].as_array() {
+                let differing = rows.iter().filter(|row| {
+                    row["baseline_revision"].is_string() && row["revision"].is_string()
+                        && row["baseline_revision"] != row["revision"]
+                }).count();
+                let dirty = rows.iter().filter(|row| row["dirty"] == true).count();
+                let unpinned = rows.iter().filter(|row| row["status"] == "unpinned").count();
+                let unavailable = rows.iter().filter(|row| {
+                    row["status"] == "missing" || row["status"] == "error"
+                }).count();
+                ui.label(format!("{differing} revision differences · {dirty} with uncommitted changes · {unpinned} without a pin · {unavailable} unavailable"));
+                if let Some(tested) = self.summary.as_ref().and_then(|value| value.get("baseline_comparison")) {
+                    if comparison_state(comparison) != comparison_state(tested) {
+                        ui.colored_label(egui::Color32::YELLOW,
+                            "This comparison differs from the snapshot recorded for the verification below.");
+                    } else {
+                        ui.small("This comparison matches the checkout state recorded for the verification below.");
+                    }
+                }
+                egui::Grid::new("baseline-comparison").striped(true).max_col_width(190.0).show(ui, |ui| {
+                    ui.strong("Codebase");
+                    ui.strong("Locked commit");
+                    ui.strong("Live commit");
+                    ui.strong("Difference");
+                    ui.label("");
+                    ui.end_row();
+                    for row in rows {
+                        let name = row["name"].as_str().unwrap_or("?");
+                        ui.label(name);
+                        ui.monospace(short_revision(&row["baseline_revision"]))
+                            .on_hover_text(row["baseline_revision"].as_str().unwrap_or("No baseline pin"));
+                        ui.monospace(short_revision(&row["revision"]))
+                            .on_hover_text(row["revision"].as_str().unwrap_or("Unavailable"));
+                        ui.label(comparison_status(row));
+                        if row["status"] != "matches" || row["dirty"] == true {
+                            let selected = self.reviewed_checkout.as_deref() == Some(name);
+                            if ui.selectable_label(selected, "Review delta").clicked() {
+                                self.reviewed_checkout = (!selected).then(|| name.to_string());
+                            }
+                        } else {
+                            ui.label("");
+                        }
+                        ui.end_row();
+                    }
+                });
+                if let Some(row) = rows.iter().find(|row| row["name"].as_str() == self.reviewed_checkout.as_deref()) {
+                    comparison_detail(ui, row);
+                }
+            }
+            ui.small("Review differences before promoting committed changes into a baseline. Pins cannot capture uncommitted changes.");
+        } else if self.comparison_error.is_none() {
+            ui.label("Compare with baseline or check setup to inspect live checkout differences.");
+        }
+        let project = self.comparison.as_ref().and_then(affected_project);
+        if ui.add_enabled(ready && project.is_some(), egui::Button::new("Preview affected cases")).clicked() {
+            let project = project.unwrap();
+            if self.project != project {
+                self.project = project;
+                self.summary = None;
+                self.report = None;
+            }
+            self.start(Action::Preview);
+        }
+        if let Some(project) = project {
+            ui.small(format!("Affected selection: {}{}", PROJECTS[project], if project == 0 { " (all scenarios)" } else { "" }));
+        }
+        ui.separator();
+    }
+}
+
+fn short_revision(value: &Value) -> String {
+    value.as_str().map(|revision| revision.chars().take(8).collect())
+        .unwrap_or_else(|| "—".into())
+}
+
+fn comparison_status(row: &Value) -> String {
+    let mut status = match row["status"].as_str().unwrap_or("error") {
+        "matches" => "Matches".into(),
+        "ahead" => format!("{} ahead", row["ahead"]),
+        "behind" => format!("{} behind", row["behind"]),
+        "diverged" => format!("Diverged: {} ahead, {} behind", row["ahead"], row["behind"]),
+        "revision-differs" => "Revision differs".into(),
+        "unpinned" => "No baseline pin".into(),
+        "missing" => "Missing checkout".into(),
+        _ => "Comparison unavailable".into(),
+    };
+    if row["dirty"] == true {
+        status = if row["status"] == "matches" { "Uncommitted changes".into() }
+            else { format!("{status} + uncommitted") };
+    }
+    status
+}
+
+fn comparison_detail(ui: &mut egui::Ui, row: &Value) {
+    ui.separator();
+    ui.strong(format!("{} · {}", row["name"].as_str().unwrap_or("?"), comparison_status(row)));
+    if let Some(path) = row["path"].as_str() { ui.small(path); }
+    ui.label(format!("Baseline: {}", row["baseline_revision"].as_str().unwrap_or("No baseline pin")));
+    ui.label(format!("Live: {}", row["revision"].as_str().unwrap_or("Unavailable")));
+    if let Some(error) = row["error"].as_str() {
+        ui.colored_label(egui::Color32::YELLOW, error);
+    }
+    ui.collapsing("Commit history · live commits absent from baseline", |ui| {
+        if let Some(commits) = row["commits"].as_array().filter(|commits| !commits.is_empty()) {
+            for commit in commits {
+                ui.label(format!("{}  {}", short_revision(&commit["revision"]), commit["subject"].as_str().unwrap_or("")));
+            }
+            if row["ahead"].as_u64().is_some_and(|count| count > commits.len() as u64) {
+                ui.small(format!("Showing the latest {} live commits.", commits.len()));
+            }
+        } else {
+            ui.label("No live-only commits recorded.");
+        }
+    });
+    for (key, title) in [("changed_files", "Changed files · baseline to live commit"),
+                         ("uncommitted_files", "Uncommitted files · staged, unstaged, and untracked")] {
+        ui.collapsing(title, |ui| {
+            if let Some(files) = row[key].as_array().filter(|files| !files.is_empty()) {
+                for file in files { ui.monospace(file.as_str().unwrap_or("?")); }
+            } else {
+                ui.label("No files recorded.");
+            }
+        });
+    }
+}
+
+fn affected_project(comparison: &Value) -> Option<usize> {
+    let rows = comparison["checkouts"].as_array()?;
+    let affected: Vec<_> = rows.iter()
+        .filter(|row| row["status"] != "matches" || row["dirty"] == true).collect();
+    if affected.is_empty() { return None; }
+    if affected.len() == 1 {
+        let name = affected[0]["name"].as_str()?;
+        return Some(PROJECTS.iter().position(|project| *project == name).unwrap_or(0));
+    }
+    Some(0)
+}
+
+fn comparison_state(comparison: &Value) -> Value {
+    let states: Vec<_> = comparison["checkouts"].as_array().into_iter().flatten().map(|row| {
+        serde_json::json!({"name": row["name"], "path": row["path"], "revision": row["revision"],
+            "dirty": row["dirty"], "diff_sha256": row["diff_sha256"], "status": row["status"]})
+    }).collect();
+    serde_json::json!({"baseline_lock": comparison["baseline_lock"],
+        "lock_sha256": comparison["lock_sha256"], "checkouts": states})
 }
 
 fn live_profile_source(root: &Path) -> PathBuf {
@@ -336,6 +587,7 @@ fn run_cli(
     project: &str,
     allow_dirty: bool,
     action: Action,
+    baseline_lock: Option<&str>,
     sender: Sender<Event>,
 ) -> Result<(i32, String, String), String> {
     let local_python = root.join(".venv/bin/python");
@@ -356,32 +608,7 @@ fn run_cli(
                 std::env::var_os("HOME").as_deref(),
             )?,
         )
-        .args(["-m", "bip375_interop.cli", "--config", config]);
-    if allow_dirty && action != Action::PinPreview && action != Action::Pin {
-        command.arg("--allow-dirty");
-    }
-    match action {
-        Action::Doctor => {
-            command.arg("doctor");
-        }
-        Action::Fetch => {
-            command.args(["fetch", "--in-place"]);
-        }
-        Action::Preview => {
-            command.args(["check", "--project", project, "--dry-run"]);
-            command.arg(check_mode(config, project));
-        }
-        Action::Check => {
-            command.args(["check", "--project", project, "--progress-json"]);
-            command.arg(check_mode(config, project));
-        }
-        Action::PinPreview => {
-            command.args(["pin", "--dry-run"]);
-        }
-        Action::Pin => {
-            command.arg("pin");
-        }
-    }
+        .args(cli_arguments(config, project, allow_dirty, action, baseline_lock));
     let mut child = command
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -415,6 +642,28 @@ fn run_cli(
     Ok((status.code().unwrap_or(2), stdout, stderr))
 }
 
+fn cli_arguments(config: &str, project: &str, allow_dirty: bool, action: Action,
+                 baseline_lock: Option<&str>) -> Vec<String> {
+    let mut args = vec!["-m", "bip375_interop.cli", "--config", config];
+    if allow_dirty && !matches!(action, Action::PinPreview | Action::Pin | Action::Compare) {
+        args.push("--allow-dirty");
+    }
+    match action {
+        Action::Compare => args.extend(["compare", "--baseline-lock", baseline_lock.unwrap()]),
+        Action::Doctor => args.push("doctor"),
+        Action::Fetch => args.extend(["fetch", "--in-place"]),
+        Action::Preview | Action::Check => {
+            args.extend(["check", "--project", project,
+                if action == Action::Preview { "--dry-run" } else { "--progress-json" },
+                check_mode(config, project)]);
+            if let Some(lock) = baseline_lock { args.extend(["--baseline-lock", lock]); }
+        }
+        Action::PinPreview => args.extend(["pin", "--dry-run"]),
+        Action::Pin => args.push("pin"),
+    }
+    args.into_iter().map(str::to_string).collect()
+}
+
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         self.receive();
@@ -440,6 +689,9 @@ impl eframe::App for App {
                                 self.doctor = None;
                                 self.summary = None;
                                 self.report = None;
+                                self.comparison = None;
+                                self.comparison_error = None;
+                                self.reviewed_checkout = None;
                             }
                         }
                     });
@@ -463,7 +715,7 @@ impl eframe::App for App {
             } else {
                 "This selection runs matching scenarios with independent validators. Use the MuSig2 baseline and all code for the full gate."
             });
-            let missing_live_profile = self.profile == 2 && !self.root.join("interop.yaml").is_file();
+            let missing_live_profile = self.profile == LIVE_PROFILE && !self.root.join("interop.yaml").is_file();
             if missing_live_profile {
                 let source = live_profile_source(&self.root);
                 ui.colored_label(egui::Color32::YELLOW, "Live development needs a local interop.yaml in this checkout.");
@@ -497,6 +749,9 @@ impl eframe::App for App {
             }
             ui.separator();
             egui::ScrollArea::vertical().show(ui, |ui| {
+                if self.profile == LIVE_PROFILE {
+                    self.comparison_ui(ui, missing_live_profile);
+                }
                 if let Some(selection) = &self.selection {
                     ui.heading("Planned cases");
                     if let Some(cases) = selection["cases"].as_array() {
@@ -511,18 +766,21 @@ impl eframe::App for App {
                         }
                     }
                 }
-                if let Some(doctor) = &self.doctor {
-                    ui.heading("Checkout status");
-                    if let Some(items) = doctor.as_array() {
-                        for item in items {
-                            ui.label(format!("{}: {}{}", item["name"].as_str().unwrap_or("?"),
-                                item["revision"].as_str().unwrap_or("?"),
-                                if item["dirty"] == true { " (uncommitted changes)" } else { "" }));
-                        }
-                    }
-                }
+                self.checkout_status_ui(ui);
                 if let Some(summary) = &self.summary {
                     ui.heading("Verification report");
+                    if let Some(tested) = summary.get("baseline_comparison") {
+                        ui.collapsing("Baseline comparison recorded for this verification", |ui| {
+                            ui.small(tested["baseline_lock"].as_str().unwrap_or(""));
+                            if let Some(rows) = tested["checkouts"].as_array() {
+                                for row in rows {
+                                    ui.label(format!("{}: {} → {} · {}", row["name"].as_str().unwrap_or("?"),
+                                        short_revision(&row["baseline_revision"]), short_revision(&row["revision"]), comparison_status(row)));
+                                }
+                            }
+                            ui.small("The full snapshot is saved in this verification's JSON manifest.");
+                        });
+                    }
                     let counts = &summary["counts"];
                     let failing_labels = ["REGRESSION", "UNCLASSIFIED", "NEW"];
                     let has_issue = failing_labels.iter().any(|label| summary["labels"][*label].as_u64().unwrap_or(0) > 0)
@@ -585,13 +843,14 @@ impl eframe::App for App {
                         ui.small(path);
                     }
                 }
+                if self.profile != LIVE_PROFILE {
                 ui.separator();
                 ui.heading("Update a baseline after code changes");
                 ui.label("Pins record exact clean checkout revisions. Review the changes, update the lock, rerun verification, then review expectations.yaml together with the lock. Use an original profile to update pins; fetched profiles reproduce existing pins.");
                 ui.horizontal(|ui| {
                     let ready = self.running.is_none() && !missing_live_profile;
-                    if ui.add_enabled(ready && self.profile < 3, egui::Button::new("Preview pin changes")).clicked() { self.start(Action::PinPreview); }
-                    if ui.add_enabled(ready && self.profile < 3 && self.pin_reviewed && self.pin_changes.as_ref().is_some_and(|v| v["changed"].as_object().is_some_and(|c| !c.is_empty())),
+                    if ui.add_enabled(ready && self.profile < 2, egui::Button::new("Preview pin changes")).clicked() { self.start(Action::PinPreview); }
+                    if ui.add_enabled(ready && self.profile < 2 && self.pin_reviewed && self.pin_changes.as_ref().is_some_and(|v| v["changed"].as_object().is_some_and(|c| !c.is_empty())),
                         egui::Button::new("Update pins")).clicked() { self.start(Action::Pin); }
                 });
                 if let Some(changes) = &self.pin_changes {
@@ -602,6 +861,7 @@ impl eframe::App for App {
                                 item["to"].as_str().unwrap_or("?")));
                         }
                     }
+                }
                 }
             });
         });
@@ -624,12 +884,187 @@ fn main() -> eframe::Result {
 #[cfg(test)]
 mod tests {
     use super::{
-        check_mode, cli_path, create_live_profile, live_profile_source, needs_setup, report_url,
-        SETUP_GUIDE,
+        affected_project, check_mode, cli_arguments, cli_path, comparison_state, comparison_status,
+        create_live_profile, live_profile_source, needs_setup, report_url, Action, App,
+        COMPARISON_BASELINES, PROJECTS, SETUP_GUIDE,
     };
     use std::ffi::OsStr;
     use std::path::Path;
     use std::process::Command;
+    use serde_json::json;
+
+    #[test]
+    fn run_and_comparison_default_to_the_bip375_baseline() {
+        let app = App::new(std::env::temp_dir());
+        assert_eq!(super::PROFILES[app.profile].1, "baseline/interop.yaml");
+        assert_eq!(COMPARISON_BASELINES[app.comparison_baseline].1, "baseline/interop.lock");
+    }
+
+    #[test]
+    fn affected_preview_uses_one_backend_or_all_scenarios() {
+        let comparison = json!({"checkouts": [
+            {"name": "jade", "status": "ahead", "dirty": false},
+            {"name": "coldcard", "status": "matches", "dirty": false}
+        ]});
+        assert_eq!(PROJECTS[affected_project(&comparison).unwrap()], "jade");
+        let dirty = json!({"checkouts": [{"name": "caravan", "status": "matches", "dirty": true}]});
+        assert_eq!(PROJECTS[affected_project(&dirty).unwrap()], "caravan");
+        for rows in [
+            json!([{"name": "jade", "status": "ahead"}, {"name": "coldcard", "status": "behind"}]),
+            json!([{"name": "embit", "status": "ahead"}]),
+            json!([{"name": "silent-pay", "status": "missing"}]),
+            json!([{"name": "bip375-test-generator", "status": "unpinned"}]),
+        ] {
+            assert_eq!(affected_project(&json!({"checkouts": rows})), Some(0));
+        }
+        assert_eq!(affected_project(&json!({"checkouts": [{"name": "jade", "status": "matches", "dirty": false}]})), None);
+    }
+
+    #[test]
+    fn audit_baseline_does_not_switch_the_run_profile_or_gate() {
+        for (_, lock) in COMPARISON_BASELINES {
+            let compare = cli_arguments("interop.yaml", "jade", false, Action::Compare, Some(lock));
+            assert_eq!(&compare[4..], &["compare", "--baseline-lock", lock]);
+            for action in [Action::Preview, Action::Check] {
+                let args = cli_arguments("interop.yaml", "jade", true, action, Some(lock));
+                assert_eq!(&args[..5], &["-m", "bip375_interop.cli", "--config", "interop.yaml", "--allow-dirty"]);
+                assert!(args.contains(&"--exhaustive".to_string()));
+                assert!(!args.contains(&"--release".to_string()));
+                assert_eq!(&args[args.len()-2..], &["--baseline-lock", lock]);
+            }
+        }
+        let baseline = cli_arguments("baseline-musig2/interop.yaml", "harness", false, Action::Check, None);
+        assert!(baseline.contains(&"--release".to_string()));
+        assert!(!baseline.contains(&"--baseline-lock".to_string()));
+    }
+
+    #[test]
+    fn refreshed_comparison_preserves_the_tested_snapshot() {
+        let mut app = App::new(std::env::temp_dir());
+        let tested = json!({"baseline_lock": "baseline/interop.lock", "lock_sha256": "old-lock",
+            "checkouts": [{"name": "caravan", "path": "/src/caravan", "revision": "abc",
+                "status": "matches", "dirty": true, "diff_sha256": "tested-diff"}]});
+        let summary = json!({"baseline_comparison": tested});
+        app.finish(Action::Check, 0, &summary.to_string(), "");
+        let mut current = tested.clone();
+        current["checkouts"][0]["diff_sha256"] = json!("new-diff");
+        app.finish(Action::Compare, 0, &current.to_string(), "");
+        assert_eq!(app.summary.as_ref().unwrap()["baseline_comparison"], tested);
+        assert_ne!(comparison_state(app.comparison.as_ref().unwrap()), comparison_state(&tested));
+
+        let preview = json!({"cases": [], "baseline_comparison": tested});
+        app.finish(Action::Preview, 0, &preview.to_string(), "");
+        assert_eq!(comparison_state(app.comparison.as_ref().unwrap()), comparison_state(&tested));
+        current["lock_sha256"] = json!("new-lock");
+        assert_ne!(comparison_state(&current), comparison_state(&tested));
+    }
+
+    #[test]
+    fn comparison_status_keeps_dirty_and_commit_differences_visible() {
+        assert_eq!(comparison_status(&json!({"status": "matches", "dirty": true})), "Uncommitted changes");
+        assert_eq!(comparison_status(&json!({"status": "ahead", "ahead": 3, "dirty": true})), "3 ahead + uncommitted");
+        assert_eq!(comparison_status(&json!({"status": "diverged", "ahead": 2, "behind": 4})), "Diverged: 2 ahead, 4 behind");
+    }
+
+    #[test]
+    fn progress_refreshes_the_comparison_before_a_preflight_failure() {
+        let mut app = App::new(std::env::temp_dir());
+        let comparison = json!({"checkouts": [{"name": "caravan", "status": "matches", "dirty": true}]});
+        app.sender.send(super::Event::Progress(json!({"stage": "baseline-comparison", "comparison": comparison}))).unwrap();
+        app.sender.send(super::Event::Finished(Action::Check, 2, String::new(), "error: preflight failed".into())).unwrap();
+        app.receive();
+        assert_eq!(app.comparison, Some(comparison));
+        assert!(app.summary.is_none());
+        assert!(app.message.contains("preflight failed"));
+    }
+
+    #[test]
+    fn verification_report_replaces_the_old_preview_and_allows_a_new_one() {
+        let preview = json!({"cases": [{"scenario": "case", "status": "selected"}]});
+        let summary = json!({"counts": {"passed": 1, "failed": 0, "blocked": 0, "completed": 0}});
+        for exit_code in [0, 1] {
+            let mut app = App::new(std::env::temp_dir());
+            app.finish(Action::Preview, 0, &preview.to_string(), "");
+            assert!(app.selection.is_some());
+
+            app.finish(Action::Check, exit_code, &summary.to_string(), "");
+            assert!(app.selection.is_none());
+            assert_eq!(app.summary, Some(summary.clone()));
+
+            app.finish(Action::Preview, 0, &preview.to_string(), "");
+            assert_eq!(app.selection, Some(preview.clone()));
+        }
+
+        let mut app = App::new(std::env::temp_dir());
+        app.finish(Action::Preview, 0, &preview.to_string(), "");
+        app.finish(Action::Check, 2, "", "error: preflight failed");
+        assert_eq!(app.selection, Some(preview));
+        assert!(app.summary.is_none());
+    }
+
+    #[test]
+    fn comparison_renders_at_desktop_widths_with_a_reviewed_delta() {
+        let mut app = App::new(std::env::temp_dir());
+        app.set_comparison(json!({"checkouts": [
+            {"name": "bip375-test-generator", "status": "unpinned", "revision": "a".repeat(40)},
+            {"name": "seedsigner", "status": "diverged", "ahead": 155, "behind": 9,
+                "baseline_revision": "b".repeat(40), "revision": "c".repeat(40),
+                "path": "/Users/test/src/seedsigner", "changed_files": ["src/signing.py"],
+                "commits": [{"revision": "c".repeat(40), "subject": "Update signing"}]},
+            {"name": "caravan", "status": "matches", "dirty": true, "uncommitted_files": ["src/psbt.ts"]}
+        ]}));
+        app.reviewed_checkout = Some("seedsigner".into());
+        for width in [640.0, 900.0] {
+            let context = eframe::egui::Context::default();
+            let input = eframe::egui::RawInput {
+                screen_rect: Some(eframe::egui::Rect::from_min_size(eframe::egui::Pos2::ZERO, eframe::egui::vec2(width, 800.0))),
+                ..Default::default()
+            };
+            let mut right_edge = 0.0;
+            let mut output = context.run_ui(input, |root_ui| {
+                eframe::egui::CentralPanel::default().show(root_ui, |ui| {
+                    app.comparison_ui(ui, false);
+                    right_edge = ui.min_rect().right();
+                });
+            });
+            output.textures_delta.clear();
+            assert!(!output.shapes.is_empty());
+            assert!(right_edge <= width, "Comparison overflows at width {width}: {right_edge}");
+        }
+    }
+
+    #[test]
+    fn live_checkout_status_stays_hidden_when_the_comparison_is_cleared() {
+        fn has_checkout_heading(shape: &eframe::egui::epaint::Shape) -> bool {
+            match shape {
+                eframe::egui::epaint::Shape::Text(text) => text.galley.text() == "Checkout status",
+                eframe::egui::epaint::Shape::Vec(shapes) => shapes.iter().any(has_checkout_heading),
+                _ => false,
+            }
+        }
+        let mut app = App::new(std::env::temp_dir());
+        app.doctor = Some(json!([{"name": "caravan", "revision": "abc", "dirty": true}]));
+        for (profile, comparison, expected_visible) in [
+            (super::LIVE_PROFILE, Some(json!({"checkouts": []})), false),
+            (super::LIVE_PROFILE, None, false),
+            (0, None, true),
+        ] {
+            app.profile = profile;
+            app.comparison = comparison;
+            let context = eframe::egui::Context::default();
+            let input = eframe::egui::RawInput {
+                screen_rect: Some(eframe::egui::Rect::from_min_size(eframe::egui::Pos2::ZERO, eframe::egui::vec2(800.0, 600.0))),
+                ..Default::default()
+            };
+            let mut output = context.run_ui(input, |root_ui| {
+                eframe::egui::CentralPanel::default().show(root_ui, |ui| {
+                    app.checkout_status_ui(ui);
+                });
+            });
+            output.textures_delta.clear();
+            assert_eq!(output.shapes.iter().any(|shape| has_checkout_heading(&shape.shape)), expected_visible);
+        }
+    }
 
     fn git(root: &Path, args: &[&str]) {
         assert!(Command::new("git")
