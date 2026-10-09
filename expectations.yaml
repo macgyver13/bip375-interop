@@ -8,8 +8,8 @@
 #   unclassified         outcome not yet triaged; resolve on the stable-pin baseline run
 # Seeded from the 2026-09-18 full run and docs/runbook.md. Tied to both baseline locks.
 lock_sha256:
-  baseline: sha256:b77fd8f8543ee5a1f7cb87e6f2d9124ecaf5e06a9b61a32056c7afd0390a850a
-  baseline-musig2: sha256:87a10dbe1d3c76e7fd37fa8b9913f661cfce8996194ae489dbc7c8d6f1241936
+  baseline: sha256:90df3371c574d45fe8b51075475ae8c94e38b3ded976e2edfac4708ed29c71b4
+  baseline-musig2: sha256:14dc7fe21d6c74c585f427b6c60d18c1c9b9e9a45c55ef69a7bc956de3668fc8
 interop_lab_allowed_findings:
   - bundled-js-rejects-unresolved
   - libwally-rejects-unresolved
@@ -50,6 +50,10 @@ scenarios:
     status: supported
     reason: passes with a P2TR key-path input
     reference: docs/runbook.md
+  bip375-btclib-coldcard-jade-two-way:
+    status: supported
+    reason: passes, final PSBT also verified by the btclib-wallet validator
+    reference: docs/runbook.md
   bip375-spdk-coldcard-jade-two-way:
     status: supported
     reason: passes, final PSBT also verified by the SPDK validator
@@ -59,8 +63,8 @@ scenarios:
     reason: passes, both devices return an already fully signed SP PSBT unchanged
     reference: docs/runbook.md
   bip375-coldcard-jade-two-way-taproot-sighash-default:
-    status: supported
-    reason: passes with Coldcard signing a SIGHASH_DEFAULT taproot input, Jade preserving that foreign field, and both validators accepting the snapshots
+    status: finding
+    reason: Coldcard signs a SIGHASH_DEFAULT taproot input, Jade preserves that foreign field, and Caravan and SPDK accept the snapshots, but btclib-wallet rejects the final PSBT because it requires SIGHASH_ALL with a silent payment output, as BIP-375 did before 0.1.4
     reference: docs/runbook.md
   bip375-seedsigner-coldcard-two-way:
     status: unsupported

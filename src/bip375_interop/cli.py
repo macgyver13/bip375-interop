@@ -29,7 +29,8 @@ from .suites import KeyArchitecture
 from .suites import get_suite
 from .suites import scenario_rounds
 from .adapters import (
-    BitSagaAdapter, CaravanAdapter, ColdcardAdapter, JadeAdapter, SeedSignerAdapter, SpdkAdapter,
+    BitSagaAdapter, BtclibAdapter, CaravanAdapter, ColdcardAdapter, JadeAdapter, SeedSignerAdapter,
+    SpdkAdapter,
 )
 from .artifacts import ArtifactRun
 from .batch import BatchRun, CaseResult
@@ -136,15 +137,16 @@ def _parser() -> argparse.ArgumentParser:
     check = sub.add_parser("check", help="run a project regression group and write a report")
     check.add_argument("--project", default="harness", choices=(
         "harness", "coldcard", "jade", "seedsigner", "bitsaga-seedsigner", "caravan", "spdk",
+        "btclib",
     ))
     check.add_argument(
         "--exhaustive", action="store_true",
-        help="also run every independent validator (e.g. caravan, spdk) on each bip375 scenario",
+        help="also run every independent validator (caravan, spdk, btclib) on each bip375 scenario",
     )
     check.add_argument(
         "--release", action="store_true",
         help=(
-            "release gate: Caravan, SPDK, and Interop Lab on every bip375 scenario, "
+            "release gate: Caravan, SPDK, btclib, and Interop Lab on every bip375 scenario, "
             "and both MuSig2 regtest architectures"
         ),
     )
@@ -211,6 +213,7 @@ def _start_workers(config, scenario, run_artifacts, descriptor: str | None = Non
 _VALIDATOR_ADAPTERS = {
     "caravan": CaravanAdapter,
     "spdk": SpdkAdapter,
+    "btclib": BtclibAdapter,
 }
 
 
@@ -589,15 +592,15 @@ def validate_psbt_file(config, path: Path, allowed_findings: set[str]) -> int:
         parsed = parse_psbt(path.read_bytes())
     except (OSError, InteropError) as exc:
         print(f"parser: failed ({exc})")
-        for name in ("caravan", "spdk", "interop-lab"):
+        for name in (*_VALIDATOR_ADAPTERS, "interop-lab"):
             print(f"{name}: not run (parser failed)")
         print("verdict: failed")
         return 1
     print("parser: passed")
     statuses = []
     for name, adapter_cls in _VALIDATOR_ADAPTERS.items():
-        if name == "spdk" and not _fully_signed(parsed):
-            print("spdk: not run (PSBT is not fully signed)")
+        if adapter_cls.snapshot_glob == "final.psbt" and not _fully_signed(parsed):
+            print(f"{name}: not run (PSBT is not fully signed)")
             statuses.append("not-run")
             continue
         checkout = config.checkouts.get(name)

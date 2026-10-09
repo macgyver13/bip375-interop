@@ -80,7 +80,7 @@ def validator_build_problems(
     *,
     spdk_binary: Path | None = None,
 ) -> list[str]:
-    """Missing Caravan dist or SPDK binary. A missing build is not a skip."""
+    """Missing Caravan dist, SPDK binary or btclib venv. A missing build is not a skip."""
 
     needed: dict[str, None] = {}
     for scenario in scenarios:
@@ -102,6 +102,12 @@ def validator_build_problems(
             problems.append(
                 f"spdk: {binary} is not built (run cargo build --release in {binary.parents[2]})"
             )
+    if "btclib" in needed:
+        checkout = config.checkouts.get("btclib")
+        if checkout is not None:
+            python = checkout.path / ".venv" / "bin" / "python"
+            if not python.is_file():
+                problems.append(f"btclib: {python} is not built (run bip375-interop build btclib)")
     return problems
 
 

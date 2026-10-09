@@ -51,6 +51,7 @@ def _both_records(snapshots: int = 2) -> list[dict]:
     return [
         {"name": "caravan", "snapshots": snapshots, "validated": snapshots},
         {"name": "spdk", "snapshots": 1, "validated": 1},
+        {"name": "btclib", "snapshots": 1, "validated": 1},
     ]
 
 
@@ -267,7 +268,7 @@ def test_release_dry_run_attaches_caravan_and_spdk_without_a_validators_key(tmp_
 
     assert code == 0
     case = json.loads(capsys.readouterr().out)["cases"][0]
-    assert case["validators"] == ["caravan", "spdk"]
+    assert case["validators"] == ["caravan", "spdk", "btclib"]
     assert case["scenario"] == "plain"
 
 
@@ -403,7 +404,8 @@ def test_release_lab_not_run_fails_even_when_expected_finding(tmp_path: Path, ca
     manifest.write_text(json.dumps({
         "verification_scope": "not-evidence", "reason": "interop-lab-skipped",
         "validators": [{"name": "caravan", "status": "passed", "snapshots": 1, "validated": 1},
-                       {"name": "spdk", "status": "passed", "snapshots": 1, "validated": 1}],
+                       {"name": "spdk", "status": "passed", "snapshots": 1, "validated": 1},
+                       {"name": "btclib", "status": "passed", "snapshots": 1, "validated": 1}],
         "interop_lab": {"status": "not-run", "reason": "Docker is missing"},
     }))
     monkeypatch.setattr("bip375_interop.cli.run_preflight", lambda *_args, **_kwargs: [])

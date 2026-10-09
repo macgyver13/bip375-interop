@@ -1,5 +1,6 @@
 # Commit id of every checkout the expectations apply to. Written by `pin`.
 checkouts:
+  btclib: 0041cba853789bf969a0cfa15496c7b7b9b591a8
   caravan: 1293c653c5540ed45c8388add5a22a5a6bfbadf3
   coldcard: 421341042e88f96a68aa15d47eab70e1ccbc5bff
   embit: f18d23bd5e089693198dcaaa15429040aad6e600
