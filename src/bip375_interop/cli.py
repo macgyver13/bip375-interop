@@ -848,7 +848,7 @@ def main(argv: list[str] | None = None) -> int:
                 print("every selected scenario was blocked; nothing was actually verified", file=sys.stderr)
                 return 1
             if args.release and any(
-                result.status == "failed" and result.artifact
+                result.status == "failed"
                 for result in batch.results
             ):
                 return 1
