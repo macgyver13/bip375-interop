@@ -278,8 +278,10 @@ def _decode_psbt(request: Mapping[str, Any]) -> bytes:
 
 
 def handle_request(worker: ColdcardPsbtWorker, request: Mapping[str, Any]) -> dict[str, Any]:
-    request_id = request.get("id")
+    request_id = request.get("id") if isinstance(request, Mapping) else None
     try:
+        if not isinstance(request, Mapping):
+            raise WorkerRequestError("invalid_request", "request must be a JSON object")
         if request.get("op") == "capabilities":
             result = worker.capabilities().as_dict()
         elif request.get("op") == "process_psbt":
