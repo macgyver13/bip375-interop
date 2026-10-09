@@ -17,7 +17,7 @@ from .expectations import (
     interop_lab_allowed_findings, load_expectations, require_lock_digest,
 )
 from .interop_lab import validate_snapshots, write_reports
-from .preflight import backend_checkout, run_preflight
+from .preflight import backend_checkout, run_preflight, use_checkout_embit
 from .regression import (
     expected_counts, has_failures, label_results, previous_results, variance_records,
 )
@@ -644,6 +644,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "validate-psbt" and args.config == Path("interop.yaml") and not args.config.is_file():
             args.config = Path("baseline/interop.yaml")
         config = load_config(args.config)
+        use_checkout_embit(config)
         if args.allow_dirty:
             config = replace(config, allow_dirty=True)
         if args.command == "compare":

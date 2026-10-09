@@ -109,3 +109,33 @@ def test_embit_must_be_imported_from_the_configured_checkout(tmp_path: Path):
 
     assert "not the configured checkout" in problem
     assert str(tmp_path) in problem
+
+
+def test_profile_embit_checkout_is_imported_ahead_of_the_venv(tmp_path, monkeypatch):
+    import os
+    import sys
+
+    from bip375_interop.preflight import use_checkout_embit
+
+    monkeypatch.setattr(sys, "path", list(sys.path))
+    monkeypatch.setenv("PYTHONPATH", "/inherited")
+    checkout = tmp_path / "embit"
+    use_checkout_embit(HarnessConfig(tmp_path, {"embit": Checkout("embit", checkout)}))
+
+    src = str((checkout / "src").resolve())
+    assert sys.path[0] == src
+    assert os.environ["PYTHONPATH"] == os.pathsep.join([src, "/inherited"])
+
+
+def test_profile_without_embit_leaves_the_import_path_alone(tmp_path, monkeypatch):
+    import os
+    import sys
+
+    from bip375_interop.preflight import use_checkout_embit
+
+    before = list(sys.path)
+    monkeypatch.delenv("PYTHONPATH", raising=False)
+    use_checkout_embit(HarnessConfig(tmp_path, {}))
+
+    assert sys.path == before
+    assert "PYTHONPATH" not in os.environ
