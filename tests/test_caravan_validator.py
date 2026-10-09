@@ -78,6 +78,17 @@ def test_caravan_plan_passes_dist_and_snapshots(tmp_path: Path):
     assert plan.argv[2:] == (str(adapter.dist), str(tmp_path / "final.psbt"))
 
 
+def test_caravan_plan_resolves_relative_psbt_path(tmp_path: Path, monkeypatch):
+    checkout = tmp_path / "caravan"
+    checkout.mkdir()
+    adapter = CaravanAdapter(_fake_checkout(checkout))
+    monkeypatch.chdir(tmp_path)
+
+    plan = adapter.plan_validate([Path("final.psbt")])
+
+    assert plan.argv[-1] == str(tmp_path / "final.psbt")
+
+
 def test_caravan_rejection_raises_with_file_and_reason(tmp_path: Path):
     adapter = CaravanAdapter(_fake_checkout(tmp_path), runner=_runner([
         {"file": "/run/00-initial.psbt", "ok": True, "error": None},

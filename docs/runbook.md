@@ -62,9 +62,11 @@ build those checkouts:
 4. **Check.** Run **Check setup**, then **Verify now**. A `preflight failed` error names
    whatever is still missing or unbuilt.
 
-The `embit` step installs the profile's embit into `.venv`, which every profile shares,
-and preflight requires the imported embit to be the selected profile's checkout. After
-switching profiles, run `build embit` with the new profile's `--config`.
+Profiles pin different embit commits but share `.venv`, so the harness does not rely on
+the embit installed there: it imports embit from the selected profile's `embit` checkout
+(`<checkout>/src`, also passed to the signer workers through `PYTHONPATH`). Switching
+profiles needs no reinstall. Preflight still refuses an embit imported from anywhere
+else, which means that checkout is missing `src/embit`.
 
 ## Desktop app and CLI workflow
 

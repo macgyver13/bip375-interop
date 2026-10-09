@@ -4,7 +4,7 @@ import base64
 import subprocess
 from pathlib import Path
 
-from bip375_interop.coldcard_psbt_worker import ColdcardPsbtWorker
+from bip375_interop.coldcard_psbt_worker import ColdcardPsbtWorker, handle_request
 
 
 class FakePacker:
@@ -63,6 +63,16 @@ def _request(mnemonic: str = "published test mnemonic") -> dict[str, str]:
         "mnemonic": mnemonic,
         "network": "regtest",
         "psbt": base64.b64encode(b"psbt\xfffixture").decode(),
+    }
+
+
+def test_coldcard_worker_returns_invalid_request_for_non_mapping_input() -> None:
+    response = handle_request(ColdcardPsbtWorker(), [])
+
+    assert response == {
+        "id": None,
+        "ok": False,
+        "error": {"code": "invalid_request", "message": "request must be a JSON object"},
     }
 
 

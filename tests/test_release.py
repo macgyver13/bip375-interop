@@ -341,6 +341,54 @@ def test_release_caravan_rejection_fails_the_case(tmp_path: Path, capsys, monkey
     assert report["counts"]["passed"] == 0
 
 
+def test_release_fails_on_failed_case_without_artifact_even_when_label_is_steady(
+    tmp_path: Path, capsys, monkeypatch,
+):
+    from bip375_interop.batch import CaseResult
+
+    scenarios = tmp_path / "scenarios"
+    _write_plain(scenarios)
+    config = tmp_path / "interop.yaml"
+    config.write_text(f"artifact_root: {tmp_path / 'artifacts'}\n")
+    _write_release_lock(tmp_path)
+    expectations = tmp_path / "expectations.yaml"
+    expectations.write_text(expectations.read_text().replace(
+        "scenarios: {}", "scenarios:\n  plain:\n    status: finding\n    reason: known issue"
+    ))
+    manifest = tmp_path / "run.json"
+    manifest.write_text("{}")
+    monkeypatch.setattr("bip375_interop.cli.run_preflight", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(
+        "bip375_interop.cli._run_generated_scenario",
+        lambda *_args, **_kwargs: (tmp_path / "final.psbt", manifest, 1),
+    )
+    monkeypatch.setattr(
+        "bip375_interop.cli.case_result_for_run",
+        lambda scenario, *_args, **_kwargs: CaseResult(scenario.name, "failed", "worker failed"),
+    )
+    monkeypatch.setattr("bip375_interop.cli._interop_stage", lambda *_args, **_kwargs: {"status": "passed"})
+    monkeypatch.setattr("bip375_interop.cli.write_reports", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        "bip375_interop.cli.invoke_musig2_release",
+        lambda **_kwargs: [
+            {"architecture": name, "passed": True, "line": "PASS"}
+            for name in ("aggregate-then-derive", "derive-then-aggregate")
+        ],
+    )
+
+    code = main([
+        "--config", str(config), "check", "--release",
+        "--scenarios-dir", str(scenarios),
+    ])
+
+    summary = json.loads(capsys.readouterr().out)
+    report = json.loads(Path(summary["manifest"]).read_text())
+    assert report["results"][0]["status"] == "failed"
+    assert report["results"][0]["artifact"] is None
+    assert report["results"][0]["label"] == "STEADY"
+    assert code == 1
+
+
 def test_release_lab_not_run_fails_even_when_expected_finding(tmp_path: Path, capsys, monkeypatch):
     scenarios = tmp_path / "scenarios"
     _write_plain(scenarios)

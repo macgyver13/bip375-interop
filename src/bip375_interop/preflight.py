@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import sys
 from pathlib import Path
 from typing import Iterable
 
@@ -23,6 +25,25 @@ def _required_checkouts(scenarios: Iterable[Scenario]) -> list[str]:
         for validator in scenario.validators:
             names[validator] = None
     return list(names)
+
+
+def use_checkout_embit(config: HarnessConfig) -> None:
+    """Import embit from the profile's checkout rather than whatever ``.venv`` has installed.
+
+    Profiles pin different embit commits but share one venv, so an installed embit
+    can only ever match one of them. Prepending the checkout's ``src`` to the import
+    path, and to PYTHONPATH for the signer workers (every worker adapter keeps the
+    inherited PYTHONPATH), makes the selected profile decide. Every embit import in
+    the harness is inside a function, so this runs before any of them.
+    """
+
+    checkout = config.checkouts.get("embit")
+    if checkout is None:
+        return
+    src = str((checkout.path / "src").resolve())
+    sys.path.insert(0, src)
+    inherited = os.environ.get("PYTHONPATH")
+    os.environ["PYTHONPATH"] = os.pathsep.join([src, inherited] if inherited else [src])
 
 
 def _embit_problem(checkout: Checkout | None) -> str | None:

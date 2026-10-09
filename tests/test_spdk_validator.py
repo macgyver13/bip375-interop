@@ -78,6 +78,15 @@ def test_spdk_plan_passes_binary_and_snapshots(tmp_path: Path, monkeypatch):
     assert plan.argv == (str(adapter.binary), str(tmp_path / "final.psbt"))
 
 
+def test_spdk_plan_resolves_relative_psbt_path(tmp_path: Path, monkeypatch):
+    adapter = SpdkAdapter(_fake_checkout(tmp_path), crate_dir=_fake_crate(tmp_path, monkeypatch))
+    monkeypatch.chdir(tmp_path)
+
+    plan = adapter.plan_validate([Path("final.psbt")])
+
+    assert plan.argv[-1] == str(tmp_path / "final.psbt")
+
+
 def test_spdk_only_validates_final_psbt():
     assert SpdkAdapter.snapshot_glob == "final.psbt"
 
